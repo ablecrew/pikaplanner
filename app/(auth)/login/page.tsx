@@ -142,13 +142,6 @@ function LoginForm() {
           <img src="/google-icon.svg" alt="" className="w-5 h-5" />
           Sign in with Google
         </button>
-
-        <button
-          onClick={() => signInWithGoogleAction('vendor')}
-          className="w-full border border-gray-200 bg-white py-3 rounded-xl font-medium text-gray-700 hover:bg-gray-50 transition flex items-center justify-center gap-3 text-sm"
-        >
-          Sign in with Google as Vendor
-        </button>
       </div>
 
       <p className="mt-6 text-center text-sm text-gray-500">
