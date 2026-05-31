@@ -9,10 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.67",
     "@lipana/sdk": "^1.0.3",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.1",
+    "ai": "^6.0.193",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.38.0",
     "intasend-node": "^1.1.2",
@@ -24,7 +26,7 @@
     "react-router-dom": "^7.14.2",
     "recharts": "^3.8.1",
     "resend": "^6.12.3",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
