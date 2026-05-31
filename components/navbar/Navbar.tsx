@@ -28,14 +28,16 @@ import {
   ReceiptText,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
-import type { Session } from '@supabase/supabase-js'
+import { useAuth } from '@/contexts/AuthContext'
+
+type Role = 'user' | 'vendor' | 'admin' | 'superadmin'
 
 interface Profile {
   id: string
   email: string
   full_name: string | null
   avatar_url: string | null
-  role: 'user' | 'vendor' | 'admin' | 'superadmin'
+  role: Role
 }
 
 interface Notification {
@@ -53,14 +55,17 @@ interface NavItem {
   icon: React.ComponentType<{ size?: number; className?: string }>
 }
 
-const NOTIF_CFG: Record<string, { icon: React.ComponentType<{ size?: number; className?: string }>; color: string; bg: string }> = {
+const NOTIF_CFG: Record<
+  string,
+  { icon: React.ComponentType<{ size?: number; className?: string }>; color: string; bg: string }
+> = {
   order: { icon: Package, color: '#1A5C3A', bg: '#D1FAE5' },
   payment: { icon: CreditCard, color: '#1E40AF', bg: '#DBEAFE' },
   vendor: { icon: ChefHat, color: '#D97706', bg: '#FEF3C7' },
   default: { icon: Info, color: '#6B7280', bg: '#F3F4F6' },
 }
 
-const ROLE_NAV: Record<string, NavItem[]> = {
+const ROLE_NAV: Record<Role, NavItem[]> = {
   user: [
     { href: '/dashboard/user/overview', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/meal-plans', label: 'Meal Plans', icon: Calendar },
@@ -97,7 +102,12 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hr / 24)}d ago`
 }
 
-function getRoleBasePath(role: Profile['role']) {
+function normalizeRole(value: unknown): Role | null {
+  if (value === 'user' || value === 'vendor' || value === 'admin' || value === 'superadmin') return value
+  return null
+}
+
+function getRoleBasePath(role: Role) {
   if (role === 'admin' || role === 'superadmin') return '/dashboard/admin'
   if (role === 'vendor') return '/dashboard/vendor'
   return '/dashboard/user'
@@ -248,14 +258,15 @@ function ProfileDropdown({
   profile,
   userEmail,
   onClose,
+  onSignOut,
+  signingOut,
 }: {
   profile: Profile | null
   userEmail?: string
   onClose: () => void
+  onSignOut: () => Promise<void>
+  signingOut: boolean
 }) {
-  const supabase = createClient()
-  const router = useRouter()
-
   const menuItems = [
     { href: '/profile', label: 'My Profile', icon: User },
     { href: '/profile/settings', label: 'Settings', icon: Settings },
@@ -266,13 +277,6 @@ function ProfileDropdown({
       ? [{ href: '/dashboard/admin/overview', label: 'Admin Panel', icon: Shield }]
       : []),
   ]
-
-  const handleSignOut = async () => {
-    onClose()
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
-  }
 
   return (
     <div className="absolute top-[calc(100%+8px)] right-0 w-[240px] bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden z-[200]">
@@ -311,13 +315,15 @@ function ProfileDropdown({
         )}
       </div>
 
-      <div className="border-t border-gray-100 py-1.5">
+      <div className="border-t border-gray-100 p-2">
         <button
-          onClick={handleSignOut}
-          className="w-full text-left px-4 py-2.5 flex items-center gap-2.5 text-sm text-red-600 hover:bg-red-50 transition"
+          onClick={() => void onSignOut()}
+          disabled={signingOut}
+          aria-busy={signingOut}
+          className="w-full rounded-xl px-4 py-2.5 flex items-center justify-center gap-2.5 text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-500 shadow-sm shadow-red-200 transition hover:opacity-95 disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          <LogOut size={14} />
-          Sign Out
+          {signingOut ? <Loader2 size={15} className="animate-spin" /> : <LogOut size={14} />}
+          {signingOut ? 'Signing out...' : 'Sign Out'}
         </button>
       </div>
     </div>
@@ -325,13 +331,10 @@ function ProfileDropdown({
 }
 
 export default function Navbar() {
+  const { user, profile, isLoading: authLoading } = useAuth()
   const supabase = createClient()
   const pathname = usePathname()
   const router = useRouter()
-
-  const [user, setUser] = useState<any>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
 
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notifsLoading, setNotifsLoading] = useState(false)
@@ -340,74 +343,85 @@ export default function Navbar() {
   const [notifOpen, setNotifOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
 
   const notifRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
 
-  const loadProfile = useCallback(
-    async (userId: string) => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, avatar_url, role')
-        .eq('id', userId)
-        .single()
-
-      if (data) setProfile(data as Profile)
-    },
-    [supabase]
-  )
-
   useEffect(() => {
-    supabase.auth
-      .getSession()
-      .then(({ data }: { data: { session: Session | null } }) => {
-        const session = data.session
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          void loadProfile(session.user.id)
-        } else {
-          setProfile(null)
-        }
-        setAuthLoading(false)
-      })
+    setMobileOpen(false)
+    setProfileOpen(false)
+    setNotifOpen(false)
+  }, [pathname])
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: any, session: Session | null) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        void loadProfile(session.user.id)
-      } else {
-        setProfile(null)
-        setAuthLoading(false)
-      }
-    })
+  const role: Role = useMemo(() => {
+    const fromProfile = normalizeRole(profile?.role)
+    const fromAppMeta = normalizeRole(user?.app_metadata?.role)
+    const fromUserMeta = normalizeRole(user?.user_metadata?.role)
+    return fromProfile || fromAppMeta || fromUserMeta || 'user'
+  }, [profile?.role, user?.app_metadata?.role, user?.user_metadata?.role])
 
-    return () => {
-      subscription.unsubscribe()
+  const dashboardBasePath = useMemo(() => getRoleBasePath(role), [role])
+  const navLinks = useMemo(() => ROLE_NAV[role] ?? ROLE_NAV.user, [role])
+  const showAuthenticatedUI = !!user && !authLoading
+
+  const name =
+    profile?.full_name ||
+    user?.user_metadata?.name ||
+    user?.user_metadata?.full_name ||
+    user?.email?.split('@')[0] ||
+    'User'
+
+  const email = profile?.email || user?.email || ''
+  const avatarUrl = profile?.avatar_url || user?.user_metadata?.avatar_url || user?.user_metadata?.picture || ''
+  const initials = name
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const handleSignOut = useCallback(async () => {
+    if (loggingOut) return
+
+    setLoggingOut(true)
+    setNotifOpen(false)
+    setProfileOpen(false)
+    setMobileOpen(false)
+
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+
+      router.replace('/login')
+      router.refresh()
+    } catch (error) {
+      console.error('Sign out failed:', error)
+      router.replace('/login')
+      router.refresh()
+    } finally {
+      setLoggingOut(false)
     }
-  }, [supabase, loadProfile])
-
-  const role: Profile['role'] = profile?.role || 'user'
-  const safeRole: Profile['role'] = ROLE_NAV[role] ? role : 'user'
-  const navLinks = useMemo(() => ROLE_NAV[safeRole] ?? ROLE_NAV['user'], [safeRole])
-  const roleBase = useMemo(() => getRoleBasePath(safeRole), [safeRole])
+  }, [loggingOut, supabase, router])
 
   const loadNotifications = useCallback(async () => {
     if (!user?.id) return
     setNotifsLoading(true)
 
-    const { data } = await supabase
-      .from('notification_logs')
-      .select('id, title, body, is_read, sent_at, metadata')
-      .eq('user_id', user.id)
-      .order('sent_at', { ascending: false })
-      .limit(20)
+    try {
+      const { data } = await supabase
+        .from('notification_logs')
+        .select('id, title, body, is_read, sent_at, metadata')
+        .eq('user_id', user.id)
+        .order('sent_at', { ascending: false })
+        .limit(20)
 
-    const rows = (data as Notification[]) || []
-    setNotifications(rows)
-    setUnreadCount(rows.filter((n) => !n.is_read).length)
-    setNotifsLoading(false)
+      const rows = (data as Notification[]) || []
+      setNotifications(rows)
+      setUnreadCount(rows.filter((n) => !n.is_read).length)
+    } finally {
+      setNotifsLoading(false)
+    }
   }, [user?.id, supabase])
 
   useEffect(() => {
@@ -463,10 +477,6 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  useEffect(() => {
-    setMobileOpen(false)
-  }, [pathname])
-
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
 
   return (
@@ -474,7 +484,7 @@ export default function Navbar() {
       <nav className="fixed top-0 left-0 right-0 z-[100] h-16 bg-white/95 backdrop-blur-md border-b border-emerald-200/40 shadow-[0_1px_20px_rgba(26,92,58,0.06)] font-poppins">
         <div className="max-w-[1200px] mx-auto px-5 h-full flex items-center justify-between">
           {/* Logo */}
-          <Link href={user ? `${roleBase}/overview` : '/'} className="flex items-center gap-2.5 flex-shrink-0">
+          <Link href={showAuthenticatedUI ? `${dashboardBasePath}/overview` : '/'} className="flex items-center gap-2.5 flex-shrink-0">
             <PikaLogo size={36} />
             <div>
               <span className="font-extrabold text-[18px] text-[#1A5C3A] leading-none">
@@ -485,9 +495,9 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop Nav */}
-          {user && (
+          {showAuthenticatedUI && (
             <div className="hidden lg:flex items-center gap-1">
-              {(navLinks ?? []).map((link) => (
+              {navLinks.map((link) => (
                 <Link
                   key={link.href}
                   href={link.href}
@@ -504,9 +514,13 @@ export default function Navbar() {
             </div>
           )}
 
-          {/* Right Side */}
+          {/* Right side */}
           <div className="flex items-center gap-2">
-            {user ? (
+            {authLoading ? (
+              <div className="w-9 h-9 rounded-xl border border-gray-200 bg-white flex items-center justify-center">
+                <Loader2 size={16} className="animate-spin text-gray-500" />
+              </div>
+            ) : showAuthenticatedUI ? (
               <>
                 {role === 'user' && (
                   <Link
@@ -561,14 +575,16 @@ export default function Navbar() {
                       profileOpen ? 'outline outline-2 outline-emerald-500/70 outline-offset-1' : ''
                     }`}
                   >
-                    <UserAvatar profile={profile} fallbackEmail={user?.email} size={36} />
+                    <UserAvatar profile={profile as Profile | null} fallbackEmail={user?.email} size={36} />
                   </button>
 
                   {profileOpen && (
                     <ProfileDropdown
-                      profile={profile}
+                      profile={profile as Profile | null}
                       userEmail={user?.email}
                       onClose={() => setProfileOpen(false)}
+                      onSignOut={handleSignOut}
+                      signingOut={loggingOut}
                     />
                   )}
                 </div>
@@ -582,7 +598,7 @@ export default function Navbar() {
                   {mobileOpen ? <X size={18} className="text-[#1A5C3A]" /> : <Menu size={18} className="text-gray-600" />}
                 </button>
               </>
-            ) : !authLoading ? (
+            ) : (
               <div className="flex items-center gap-2">
                 <Link
                   href="/login"
@@ -597,7 +613,7 @@ export default function Navbar() {
                   Get started
                 </Link>
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </nav>
@@ -616,90 +632,95 @@ export default function Navbar() {
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         } flex flex-col`}
       >
-        {user && (
-          <div className="p-5 border-b border-white/10 flex items-center gap-3">
-            <UserAvatar profile={profile} fallbackEmail={user?.email} size={46} />
-            <div className="min-w-0 flex-1">
-              <p className="text-white font-bold text-[15px] truncate">
-                {profile?.full_name || user?.email?.split('@')[0] || 'User'}
-              </p>
-              <p className="text-white/55 text-xs truncate">{profile?.email || user?.email}</p>
+        {showAuthenticatedUI && (
+          <>
+            <div className="p-5 border-b border-white/10 flex items-center gap-3">
+              <UserAvatar profile={profile as Profile | null} fallbackEmail={user?.email} size={46} />
+              <div className="min-w-0 flex-1">
+                <p className="text-white font-bold text-[15px] truncate">
+                  {profile?.full_name || user?.email?.split('@')[0] || 'User'}
+                </p>
+                <p className="text-white/55 text-xs truncate">{profile?.email || user?.email}</p>
+                {role === 'user' && (
+                  <span className="inline-block mt-1.5 bg-amber-500/25 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
+                    Free Plan
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="p-3 flex-1 overflow-y-auto">
+              <p className="text-[9.5px] text-white/35 uppercase tracking-[1.5px] px-2.5 mb-2">Menu</p>
+
+              {navLinks.map((link) => {
+                const active = isActive(link.href)
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`flex items-center gap-3 p-3 rounded-xl mb-1 border transition ${
+                      active
+                        ? 'bg-emerald-500/15 border-emerald-400/35'
+                        : 'border-transparent hover:bg-white/5'
+                    }`}
+                    onClick={() => setMobileOpen(false)}
+                  >
+                    <div
+                      className={`w-8.5 h-8.5 rounded-lg flex items-center justify-center ${
+                        active ? 'bg-emerald-500/20' : 'bg-white/10'
+                      }`}
+                    >
+                      <link.icon size={16} className={active ? 'text-emerald-300' : 'text-white/75'} />
+                    </div>
+                    <span className={`text-sm flex-1 ${active ? 'text-emerald-300 font-bold' : 'text-white/85 font-medium'}`}>
+                      {link.label}
+                    </span>
+                    {active && <Check size={14} className="text-emerald-300" />}
+                  </Link>
+                )
+              })}
+
               {role === 'user' && (
-                <span className="inline-block mt-1.5 bg-amber-500/25 text-amber-300 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide">
-                  Free Plan
-                </span>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="p-3 flex-1 overflow-y-auto">
-          <p className="text-[9.5px] text-white/35 uppercase tracking-[1.5px] px-2.5 mb-2">Menu</p>
-
-          {(navLinks ?? []).map((link) => {
-            const active = isActive(link.href)
-            return (
-              <Link
-                key={link.href}
-                href={link.href}
-                className={`flex items-center gap-3 p-3 rounded-xl mb-1 border transition ${
-                  active
-                    ? 'bg-emerald-500/15 border-emerald-400/35'
-                    : 'border-transparent hover:bg-white/5'
-                }`}
-              >
-                <div
-                  className={`w-8.5 h-8.5 rounded-lg flex items-center justify-center ${
-                    active ? 'bg-emerald-500/20' : 'bg-white/10'
-                  }`}
+                <Link
+                  href="/pricing"
+                  className="mt-2 flex items-center gap-3 p-3 rounded-xl border border-amber-400/35 bg-amber-500/10"
+                  onClick={() => setMobileOpen(false)}
                 >
-                  <link.icon size={16} className={active ? 'text-emerald-300' : 'text-white/75'} />
+                  <div className="w-8.5 h-8.5 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                    <Crown size={16} className="text-amber-300" />
+                  </div>
+                  <div>
+                    <p className="text-amber-300 font-bold text-sm">Upgrade Plan</p>
+                    <p className="text-amber-300/70 text-[11px]">From KES 50/week</p>
+                  </div>
+                </Link>
+              )}
+
+              <Link
+                href="/profile/settings"
+                className="mt-2 flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition"
+                onClick={() => setMobileOpen(false)}
+              >
+                <div className="w-8.5 h-8.5 rounded-lg bg-white/10 flex items-center justify-center">
+                  <Settings size={16} className="text-white/75" />
                 </div>
-                <span className={`text-sm flex-1 ${active ? 'text-emerald-300 font-bold' : 'text-white/85 font-medium'}`}>
-                  {link.label}
-                </span>
-                {active && <Check size={14} className="text-emerald-300" />}
+                <span className="text-sm text-white/85 font-medium">Settings</span>
               </Link>
-            )
-          })}
-
-          {role === 'user' && (
-            <Link
-              href="/pricing"
-              className="mt-2 flex items-center gap-3 p-3 rounded-xl border border-amber-400/35 bg-amber-500/10"
-            >
-              <div className="w-8.5 h-8.5 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                <Crown size={16} className="text-amber-300" />
-              </div>
-              <div>
-                <p className="text-amber-300 font-bold text-sm">Upgrade Plan</p>
-                <p className="text-amber-300/70 text-[11px]">From KES 50/week</p>
-              </div>
-            </Link>
-          )}
-
-          <Link href="/profile/settings" className="mt-2 flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition">
-            <div className="w-8.5 h-8.5 rounded-lg bg-white/10 flex items-center justify-center">
-              <Settings size={16} className="text-white/75" />
             </div>
-            <span className="text-sm text-white/85 font-medium">Settings</span>
-          </Link>
-        </div>
 
-        <div className="p-4 border-t border-white/10">
-          <button
-            onClick={async () => {
-              setMobileOpen(false)
-              await supabase.auth.signOut()
-              router.push('/login')
-              router.refresh()
-            }}
-            className="w-full flex items-center gap-2.5 p-3 rounded-xl bg-red-500/10 border border-red-400/25 text-red-300 font-semibold text-sm"
-          >
-            <LogOut size={16} />
-            Sign Out
-          </button>
-        </div>
+            <div className="p-4 border-t border-white/10">
+              <button
+                onClick={() => void handleSignOut()}
+                disabled={loggingOut}
+                aria-busy={loggingOut}
+                className="w-full flex items-center justify-center gap-2.5 p-3 rounded-xl bg-red-500/10 border border-red-400/25 text-red-300 font-semibold text-sm transition hover:bg-red-500/15 disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {loggingOut ? <Loader2 size={16} className="animate-spin" /> : <LogOut size={16} />}
+                {loggingOut ? 'Signing out...' : 'Sign Out'}
+              </button>
+            </div>
+          </>
+        )}
       </aside>
 
       {/* Spacer */}

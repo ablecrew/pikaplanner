@@ -1,22 +1,48 @@
 'use client'
 
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import {
-  LayoutDashboard, Users, Store, UtensilsCrossed, ShoppingCart,
-  CreditCard, BarChart3, Bell, Settings, LogOut, Menu, X,
-  ChevronDown, Search, User as UserIcon, Package, Heart, HelpCircle,
-  BarChart4, Leaf, Crown,
+  LayoutDashboard,
+  Users,
+  Store,
+  UtensilsCrossed,
+  ShoppingCart,
+  CreditCard,
+  BarChart3,
+  Bell,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  ChevronDown,
+  Search,
+  User as UserIcon,
+  Package,
+  Heart,
+  HelpCircle,
+  BarChart4,
+  Leaf,
+  Crown,
   Calendar,
 } from 'lucide-react'
+
+type Role = 'user' | 'vendor' | 'admin' | 'superadmin'
 
 interface SidebarItem {
   label: string
   icon: React.ReactNode
   path: string
+}
+
+const ROLE_PRIORITY: Record<Role, number> = {
+  user: 0,
+  vendor: 1,
+  admin: 2,
+  superadmin: 3,
 }
 
 const adminSidebar: SidebarItem[] = [
@@ -58,20 +84,36 @@ const userSidebar: SidebarItem[] = [
   { label: 'Settings', icon: <Settings size={18} />, path: '/dashboard/user/settings' },
 ]
 
-const getSidebarItems = (role: string) => {
+function isValidRole(value: unknown): value is Role {
+  return value === 'user' || value === 'vendor' || value === 'admin' || value === 'superadmin'
+}
+
+function normalizeRole(value: unknown): Role | null {
+  if (typeof value !== 'string') return null
+  return isValidRole(value) ? value : null
+}
+
+function mergeRole(current: Role | null, next: unknown): Role | null {
+  const candidate = normalizeRole(next)
+  if (!candidate) return current
+  if (!current) return candidate
+  return ROLE_PRIORITY[candidate] >= ROLE_PRIORITY[current] ? candidate : current
+}
+
+const getSidebarItems = (role: Role) => {
   if (role === 'admin' || role === 'superadmin') return adminSidebar
   if (role === 'vendor') return vendorSidebar
   return userSidebar
 }
 
-const getRoleLabel = (role: string) => {
+const getRoleLabel = (role: Role) => {
   if (role === 'superadmin') return 'Super Admin'
   if (role === 'admin') return 'Administrator'
   if (role === 'vendor') return 'Vendor'
   return 'Customer'
 }
 
-const getDashboardBasePath = (role: string) => {
+const getDashboardBasePath = (role: Role) => {
   if (role === 'admin' || role === 'superadmin') return '/dashboard/admin'
   if (role === 'vendor') return '/dashboard/vendor'
   return '/dashboard/user'
@@ -86,13 +128,14 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const supabase = useMemo(() => createClient(), [])
-  const hasAttemptedFetch = useRef(false)
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
-  const [role, setRole] = useState<string | null>(null)
-  const [ready, setReady] = useState(false)
+  const [role, setRole] = useState<Role | null>(null)
+  const [loadingRole, setLoadingRole] = useState(true)
+
+  const roleFetchRef = useRef<string | null>(null)
 
   // Close mobile drawer whenever route changes
   useEffect(() => {
@@ -100,71 +143,100 @@ export default function DashboardLayout({
     setProfileOpen(false)
   }, [pathname])
 
-  // Fetch role with multiple fallbacks — NEVER gets stuck
+  // Resolve role safely with caching and fallbacks
   useEffect(() => {
-    if (hasAttemptedFetch.current) return
+    let cancelled = false
 
-    const loginTimeout = setTimeout(() => {
-      if (!user) {
-        router.push('/login')
-      }
-    }, 3000)
-
+    // If no user, keep loading briefly then redirect
     if (!user) {
-      return () => clearTimeout(loginTimeout)
+      setLoadingRole(true)
+
+      const loginTimeout = setTimeout(() => {
+        if (!user) {
+          router.push('/login')
+        }
+      }, 3000)
+
+      return () => {
+        cancelled = true
+        clearTimeout(loginTimeout)
+      }
     }
 
-    hasAttemptedFetch.current = true
-    clearTimeout(loginTimeout)
+    const cacheKey = `pikaplan:role:${user.id}`
+    roleFetchRef.current = cacheKey
+
+    const cachedRole = typeof window !== 'undefined'
+      ? normalizeRole(localStorage.getItem(cacheKey))
+      : null
+
+    // Use cached role immediately if present so elevated roles don't flash as customer
+    if (cachedRole) {
+      setRole(cachedRole)
+      setLoadingRole(false)
+    } else {
+      setLoadingRole(true)
+    }
 
     const loadRole = async () => {
-      let resolvedRole = 'user'
+      let resolved: Role | null = cachedRole
 
       try {
-        // Try 1: Direct profile query
-        const { data: profile, error } = await supabase
+        // 1) profiles.role
+        const { data: profile } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
-          .single()
+          .maybeSingle()
 
-        if (!error && profile?.role) {
-          resolvedRole = profile.role
-        } else {
-          // Try 2: RPC function (bypasses RLS)
-          try {
-            const rpcResult = await supabase.rpc('get_my_profile').single()
-            const rpcData = rpcResult.data as { role: string } | null
-            if (rpcData?.role) {
-              resolvedRole = rpcData.role
-            }
-          } catch {
-            // Try 3: Fall back to user_metadata
-            resolvedRole = user.user_metadata?.role || 'user'
-          }
-        }
+        resolved = mergeRole(resolved, profile?.role)
       } catch {
-        resolvedRole = user.user_metadata?.role || 'user'
+        // ignore and continue
       }
 
-      setRole(resolvedRole)
-      setReady(true)
+      try {
+        // 2) RPC fallback
+        const { data: rpcData } = await supabase.rpc('get_my_profile')
+
+        const rpcRole = Array.isArray(rpcData)
+          ? normalizeRole((rpcData[0] as { role?: string } | undefined)?.role)
+          : normalizeRole((rpcData as { role?: string } | null)?.role)
+
+        resolved = mergeRole(resolved, rpcRole)
+      } catch {
+        // ignore and continue
+      }
+
+      // 3) app_metadata and user_metadata fallbacks
+      resolved = mergeRole(resolved, user.app_metadata?.role)
+      resolved = mergeRole(resolved, user.user_metadata?.role)
+
+      // Final fallback: only if nothing valid was found
+      if (!resolved) {
+        resolved = 'user'
+      }
+
+      if (cancelled) return
+
+      setRole(resolved)
+      setLoadingRole(false)
+
+      // Cache final resolved role for this user
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(cacheKey, resolved)
+        } catch {
+          // ignore storage errors
+        }
+      }
     }
 
-    const hardTimeout = setTimeout(() => {
-      if (!ready) {
-        setRole(user.user_metadata?.role || 'user')
-        setReady(true)
-      }
-    }, 5000)
-
-    void loadRole().finally(() => clearTimeout(hardTimeout))
+    void loadRole()
 
     return () => {
-      clearTimeout(loginTimeout)
-      clearTimeout(hardTimeout)
+      cancelled = true
     }
-  }, [user, supabase, router, ready])
+  }, [user, supabase, router])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -174,7 +246,8 @@ export default function DashboardLayout({
     return () => document.removeEventListener('click', close)
   }, [profileOpen])
 
-  if (!user || !ready) {
+  // Keep loading until user + role are confirmed
+  if (!user || loadingRole) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
@@ -185,7 +258,7 @@ export default function DashboardLayout({
     )
   }
 
-  const resolvedRole = role || 'user'
+  const resolvedRole: Role = role || 'user'
   const dashboardBasePath = getDashboardBasePath(resolvedRole)
   const sidebarItems = getSidebarItems(resolvedRole)
 
@@ -363,7 +436,7 @@ export default function DashboardLayout({
       >
         {/* TopNav */}
         <header className="h-16 bg-white border-b border-gray-100 shadow-sm sticky top-0 z-30 flex items-center justify-between px-4 lg:px-6">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className="p-2 hover:bg-gray-100 rounded-lg transition text-gray-500 lg:hidden"
@@ -373,7 +446,7 @@ export default function DashboardLayout({
             </button>
 
             {/* Search */}
-            <div className="relative hidden sm:block">
+            <div className="relative hidden sm:block min-w-0">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 placeholder="Search anything..."
