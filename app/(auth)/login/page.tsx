@@ -35,22 +35,29 @@ function LoginForm() {
         onboardingComplete?: boolean
       }
 
+      // 1. Admins: Always go to dashboard
       if (role === 'admin' || role === 'superadmin') {
         router.push('/dashboard')
         return
       }
 
-      if (role === 'vendor' && !onboardingComplete) {
-        router.push('/vendor-signup')
+      // 2. Vendors: If onboarding incomplete, go to vendor-signup, else dashboard
+      if (role === 'vendor') {
+        if (!onboardingComplete) {
+          router.push('/vendor-signup')
+        } else {
+          router.push(redirectTo)
+        }
         return
       }
 
+      // 3. Customers (Default): If onboarding incomplete, go to onboarding, else dashboard
+      // This is now strictly separated from the vendor logic
       if (!onboardingComplete) {
         router.push('/onboarding')
-        return
+      } else {
+        router.push(redirectTo)
       }
-
-      router.push(redirectTo)
     })
   }
 
