@@ -167,8 +167,8 @@ export default function ContactPage() {
                   <h4 className="font-bold">Support Hours</h4>
                 </div>
                 <p className="text-white/90 text-sm">Monday - Friday: 8:00 AM - 6:00 PM EAT</p>
-                <p className="text-white/90 text-sm mt-1">Saturday: 9:00 AM - 1:00 PM EAT</p>
-                <p className="text-white/90 text-sm mt-1">Sunday: Closed</p>
+                <p className="text-white/90 text-sm mt-1">Sunday: 9:00 AM - 1:00 PM EAT</p>
+                <p className="text-white/90 text-sm mt-1">Saturday: Closed</p>
               </div>
 
               <Link
