@@ -124,9 +124,14 @@ function pickArray(row: DataRow | undefined, keys: string[]) {
   if (!row) return [] as string[]
   for (const key of keys) {
     const value = row[key]
-    if (Array.isArray(value)) return value.map((item) => asString(item).toLowerCase()).filter(Boolean)
+    if (Array.isArray(value)) {
+      return value.map((item) => asString(item).toLowerCase()).filter(Boolean)
+    }
     if (typeof value === 'string' && value.trim()) {
-      return value.split(',').map((item) => item.trim().toLowerCase()).filter(Boolean)
+      return value
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean)
     }
   }
   return [] as string[]
@@ -156,6 +161,11 @@ function createMealRecommendation(
   source: 'meal' | 'vendor_meal',
   vendor?: DataRow,
 ): RecommendedMeal {
+  // For vendor_meal rows, the real meal info lives under row.meal
+  // For meal rows, the fields are directly on row
+  const mealRow = (row.meal as DataRow | undefined) || row
+  const vendorRow = (row.vendor as DataRow | undefined) || vendor
+
   const dietary = normalizeList(profile?.dietary_preferences)
   const cuisines = normalizeList(profile?.cuisine_preferences)
   const mealTypes = normalizeList(profile?.meal_types)
@@ -164,13 +174,18 @@ function createMealRecommendation(
   const budgetCeiling = getBudgetCeiling(profile?.budget_range)
 
   const rowTags = [
-    ...pickArray(row, ['dietary_tags', 'dietary_options', 'tags', 'labels']),
-    ...pickArray(row, ['cuisine_types', 'cuisine', 'category']),
-    pick(row, ['meal_type', 'type', 'category']).toLowerCase(),
+    ...pickArray(mealRow, ['dietary_tags', 'dietary_options', 'tags', 'labels']),
+    ...pickArray(mealRow, ['cuisine_types', 'cuisine', 'category']),
+    pick(mealRow, ['meal_type', 'type', 'category']).toLowerCase(),
   ].filter(Boolean)
 
-  const vendorLocation = pick(vendor, ['location', 'location_city', 'address', 'service_area']).toLowerCase()
-  const allergens = pickArray(row, ['allergens', 'allergies', 'contains'])
+  const vendorLocation = pick(vendorRow, [
+    'location',
+    'location_city',
+    'address',
+    'service_area',
+  ]).toLowerCase()
+  const allergens = pickArray(mealRow, ['allergens', 'allergies', 'contains'])
   const price = asNumber(row.price ?? row.amount ?? row.cost ?? row.estimated_price)
   const matchReasons: string[] = []
 
@@ -186,10 +201,17 @@ function createMealRecommendation(
   return {
     id: asString(row.id),
     source,
-    title: pick(row, ['name', 'title', 'meal_name']) || 'Recommended meal',
-    description: pick(row, ['description', 'summary', 'notes']) || 'A meal matched from your Smart Meal preferences.',
-    vendorName: pick(vendor, ['business_name', 'name', 'vendor_name']) || pick(row, ['vendor_name']) || 'Smart Meal Kitchen',
-    location: pick(vendor, ['location_city', 'location', 'service_area', 'address']) || pick(row, ['location', 'service_area']),
+    title: pick(mealRow, ['name', 'title', 'meal_name']) || 'Recommended meal',
+    description:
+      pick(mealRow, ['description', 'summary', 'notes']) ||
+      'A meal matched from your Smart Meal preferences.',
+    vendorName:
+      pick(vendorRow, ['business_name', 'name', 'vendor_name']) ||
+      pick(mealRow, ['vendor_name']) ||
+      'Smart Meal Kitchen',
+    location:
+      pick(vendorRow, ['location_city', 'location', 'service_area', 'address']) ||
+      pick(mealRow, ['location', 'service_area']),
     price,
     tags: rowTags.slice(0, 3),
     matchReasons: matchReasons.length > 0 ? matchReasons.slice(0, 3) : ['Recommended'],
@@ -228,33 +250,35 @@ export default function ShoppingPage() {
       setLoading(false)
       return null
     }
-  
+
     setLoading(true)
     setError(null)
-  
+
     try {
       const { data, error: listError } = await supabase
         .from('shopping_lists')
-        .select(`
+        .select(
+          `
           *,
           shopping_list_items(*)
-        `)
+        `,
+        )
         .eq('user_id', activeUserId)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle()
-  
+
       if (listError) {
-        const msg = (listError as any)?.message || 'Table or column not found. Check RLS and schema.'
+        const msg = (listError as { message?: string })?.message || 'Table or column not found. Check RLS and schema.'
         throw new Error(msg)
       }
-  
+
       const latestList = (data as ShoppingList) || null
       setList(latestList)
       return latestList
-    } catch (err: unknown) {
+    } catch (err) {
       console.error('Shopping list fetch failed:', err)
-      const message = (err as any)?.message || 'Failed to load shopping list'
+      const message = (err as { message?: string })?.message || 'Failed to load shopping list'
       setError(message)
       return null
     } finally {
@@ -268,18 +292,59 @@ export default function ShoppingPage() {
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .select('dietary_preferences, allergies, cuisine_preferences, meal_types, budget_range, location, location_city, household_size')
+        .select(
+          'dietary_preferences, allergies, cuisine_preferences, meal_types, budget_range, location, location_city, household_size',
+        )
         .eq('id', uid)
         .maybeSingle()
 
       if (profileError) throw profileError
       const profile = (profileData ?? null) as UserProfile | null
 
-      const [{ data: mealsData }, { data: vendorMealsData }, { data: vendorsData }] = await Promise.all([
+      // FIX: vendor_meals is fetched with a nested join so we get the real
+      // meal info and vendor info along with the price.
+      const [
+        { data: mealsData, error: mealsErr },
+        { data: vendorMealsData, error: vendorMealsErr },
+        { data: vendorsData, error: vendorsErr },
+      ] = await Promise.all([
         supabase.from('meals').select('*').limit(24),
-        supabase.from('vendor_meals').select('*').limit(24),
+        supabase
+          .from('vendor_meals')
+          .select(
+            `
+            id,
+            price,
+            currency,
+            is_available,
+            preparation_time_minutes,
+            notes,
+            meal:meals (
+              id,
+              name,
+              description,
+              tags,
+              category,
+              cuisine,
+              is_active
+            ),
+            vendor:vendors (
+              id,
+              business_name,
+              location_city,
+              location_address,
+              is_accepting_orders
+            )
+          `,
+          )
+          .eq('is_available', true)
+          .limit(24),
         supabase.from('vendors').select('*').limit(60),
       ])
+
+      if (mealsErr) console.warn('Meals fetch warning:', mealsErr)
+      if (vendorMealsErr) console.warn('Vendor meals fetch warning:', vendorMealsErr)
+      if (vendorsErr) console.warn('Vendors fetch warning:', vendorsErr)
 
       const vendors = ((vendorsData ?? []) as DataRow[])
       const vendorMap = new Map(vendors.map((vendor) => [asString(vendor.id), vendor]))
@@ -287,9 +352,14 @@ export default function ShoppingPage() {
       const mealRecommendations = ((mealsData ?? []) as DataRow[]).map((meal) =>
         createMealRecommendation(meal, profile, 'meal'),
       )
-      const vendorMealRecommendations = ((vendorMealsData ?? []) as DataRow[]).map((meal) =>
-        createMealRecommendation(meal, profile, 'vendor_meal', vendorMap.get(pick(meal, ['vendor_id']))),
-      )
+
+      // FIX: the vendor meal row already has .meal and .vendor nested, so we
+      // pass it through as-is. The function now reads the nested data.
+      const vendorMealRecommendations = ((vendorMealsData ?? []) as DataRow[]).map((meal) => {
+        const vendorId = pick(meal, ['vendor_id']) || asString((meal.vendor as DataRow | undefined)?.id)
+        const fallbackVendor = vendorId ? vendorMap.get(vendorId) : undefined
+        return createMealRecommendation(meal, profile, 'vendor_meal', fallbackVendor)
+      })
 
       const recommendedMeals = [...mealRecommendations, ...vendorMealRecommendations]
         .sort((a, b) => scoreRecommendation(b) - scoreRecommendation(a))
@@ -310,14 +380,22 @@ export default function ShoppingPage() {
 
         const currentItemNames = new Set(
           (activeList?.shopping_list_items ?? [])
-            .map((item) => (item.ingredient_name || item.item_name || item.name || '').toLowerCase())
+            .map((item) =>
+              (item.ingredient_name || item.item_name || item.name || '').toLowerCase(),
+            )
             .filter(Boolean),
         )
         const mealTitleById = new Map(recommendedMeals.map((meal) => [meal.id, meal.title]))
 
         suggestedIngredients = ((ingredientsData ?? []) as DataRow[])
           .map((ingredient) => ({
-            id: asString(ingredient.id) || `${pick(ingredient, ['meal_id', 'recipe_id'])}-${pick(ingredient, ['ingredient', 'ingredient_name', 'item_name'])}`,
+            id:
+              asString(ingredient.id) ||
+              `${pick(ingredient, ['meal_id', 'recipe_id'])}-${pick(ingredient, [
+                'ingredient',
+                'ingredient_name',
+                'item_name',
+              ])}`,
             name: pick(ingredient, ['ingredient', 'ingredient_name', 'item_name', 'name']),
             quantity: pick(ingredient, ['quantity', 'amount']) || '1',
             unit: pick(ingredient, ['unit', 'measurement']) || '',
@@ -376,6 +454,7 @@ export default function ShoppingPage() {
     }
 
     void init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase])
 
   const items = useMemo(() => list?.shopping_list_items || [], [list])
@@ -401,7 +480,8 @@ export default function ShoppingPage() {
       ...(profile?.meal_types ?? []),
       profile?.budget_range,
       profile?.location_city || profile?.location,
-    ].filter(Boolean).slice(0, 8) as string[]
+    ].filter(Boolean)
+      .slice(0, 8) as string[]
   }, [addOns.profile])
 
   const ensureShoppingList = async () => {
@@ -426,7 +506,13 @@ export default function ShoppingPage() {
     return createdList
   }
 
-  const addShoppingItem = async (item: { id: string; name: string; quantity?: string; unit?: string; estimatedPrice?: number }) => {
+  const addShoppingItem = async (item: {
+    id: string
+    name: string
+    quantity?: string
+    unit?: string
+    estimatedPrice?: number
+  }) => {
     setAddingItemId(item.id)
     setError(null)
     setSuccessMessage(null)
@@ -434,16 +520,14 @@ export default function ShoppingPage() {
     try {
       const activeList = await ensureShoppingList()
 
-      const { error: insertError } = await supabase
-        .from('shopping_list_items')
-        .insert({
-          shopping_list_id: activeList.id,
-          ingredient_name: item.name,
-          quantity: item.quantity || '1',
-          unit: item.unit || null,
-          estimated_price: item.estimatedPrice || 0,
-          is_checked: false,
-        })
+      const { error: insertError } = await supabase.from('shopping_list_items').insert({
+        shopping_list_id: activeList.id,
+        ingredient_name: item.name,
+        quantity: item.quantity || '1',
+        unit: item.unit || null,
+        estimated_price: item.estimatedPrice || 0,
+        is_checked: false,
+      })
 
       if (insertError) throw insertError
 
@@ -451,15 +535,18 @@ export default function ShoppingPage() {
         if (!prev) return prev
         return {
           ...prev,
-          shopping_list_items: [...(prev.shopping_list_items ?? []), {
-            id: crypto.randomUUID(),
-            ingredient_name: item.name,
-            name: item.name,
-            quantity: item.quantity || '1',
-            unit: item.unit || null,
-            estimated_price: item.estimatedPrice || 0,
-            is_checked: false,
-          }],
+          shopping_list_items: [
+            ...(prev.shopping_list_items ?? []),
+            {
+              id: crypto.randomUUID(),
+              ingredient_name: item.name,
+              name: item.name,
+              quantity: item.quantity || '1',
+              unit: item.unit || null,
+              estimated_price: item.estimatedPrice || 0,
+              is_checked: false,
+            },
+          ],
         }
       })
       setSuccessMessage(`${item.name} added to your shopping list.`)
@@ -477,7 +564,12 @@ export default function ShoppingPage() {
 
     try {
       if (meal.source !== 'meal') {
-        await addShoppingItem({ id: meal.id, name: meal.title, quantity: '1', estimatedPrice: meal.price })
+        await addShoppingItem({
+          id: meal.id,
+          name: meal.title,
+          quantity: '1',
+          estimatedPrice: meal.price,
+        })
         return
       }
 
@@ -501,7 +593,12 @@ export default function ShoppingPage() {
         .filter((ingredient) => ingredient.name)
 
       if (ingredients.length === 0) {
-        await addShoppingItem({ id: meal.id, name: meal.title, quantity: '1', estimatedPrice: meal.price })
+        await addShoppingItem({
+          id: meal.id,
+          name: meal.title,
+          quantity: '1',
+          estimatedPrice: meal.price,
+        })
         return
       }
 
@@ -526,7 +623,10 @@ export default function ShoppingPage() {
         if (!prev) return prev
         return {
           ...prev,
-          shopping_list_items: [...(prev.shopping_list_items ?? []), ...((inserted ?? []) as ShoppingListItem[])],
+          shopping_list_items: [
+            ...(prev.shopping_list_items ?? []),
+            ...((inserted ?? []) as ShoppingListItem[]),
+          ],
         }
       })
       setSuccessMessage(`${ingredients.length} ingredients from "${meal.title}" added.`)
@@ -582,16 +682,16 @@ export default function ShoppingPage() {
       setError('Your shopping list is empty. Add items first.')
       return
     }
-  
+
     if (!phoneNumber || phoneNumber.replace(/[^0-9]/g, '').length < 10) {
       setShowPhoneInput(true)
       return
     }
-  
+
     setIsPaying(true)
     setError(null)
     setSuccessMessage(null)
-  
+
     try {
       const res = await fetch('/api/mpesa/stkpush', {
         method: 'POST',
@@ -603,14 +703,14 @@ export default function ShoppingPage() {
           userId: userId,
         }),
       })
-  
+
       const data = await res.json()
-  
+
       if (!data.success) throw new Error(data.error || 'Payment initiation failed')
-  
+
       setSuccessMessage('STK Push sent! Check your phone and enter your M-Pesa PIN to complete payment.')
       setShowPhoneInput(false)
-    } catch (err: unknown) {
+    } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment initiation failed')
     } finally {
       setIsPaying(false)
@@ -755,7 +855,10 @@ export default function ShoppingPage() {
           {preferenceChips.length > 0 && (
             <div className="mb-6 flex flex-wrap gap-2">
               {preferenceChips.map((chip) => (
-                <span key={chip} className="rounded-full bg-[#f0fdf4] px-3 py-1 text-xs font-black text-[#126e3d]">
+                <span
+                  key={chip}
+                  className="rounded-full bg-[#f0fdf4] px-3 py-1 text-xs font-black text-[#126e3d]"
+                >
                   {chip}
                 </span>
               ))}
@@ -785,11 +888,16 @@ export default function ShoppingPage() {
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2">
                     {addOns.recommendedMeals.map((meal) => (
-                      <div key={`${meal.source}-${meal.id}`} className="rounded-3xl border border-gray-100 bg-[#f8faf8] p-5">
+                      <div
+                        key={`${meal.source}-${meal.id}`}
+                        className="rounded-3xl border border-gray-100 bg-[#f8faf8] p-5"
+                      >
                         <div className="mb-3 flex items-start justify-between gap-3">
                           <div>
                             <p className="text-base font-black text-slate-900">{meal.title}</p>
-                            <p className="mt-1 line-clamp-2 text-xs font-medium leading-relaxed text-gray-500">{meal.description}</p>
+                            <p className="mt-1 line-clamp-2 text-xs font-medium leading-relaxed text-gray-500">
+                              {meal.description}
+                            </p>
                           </div>
                           <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase text-[#126e3d]">
                             {meal.source === 'vendor_meal' ? 'Vendor' : 'Recipe'}
@@ -798,7 +906,10 @@ export default function ShoppingPage() {
 
                         <div className="mb-3 flex flex-wrap gap-2">
                           {meal.matchReasons.map((reason) => (
-                            <span key={reason} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-600">
+                            <span
+                              key={reason}
+                              className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-[11px] font-bold text-gray-600"
+                            >
                               {reason === 'Near you' && <MapPin className="h-3 w-3 text-[#f97316]" />}
                               {reason === 'Allergy-safe' && <ShieldAlert className="h-3 w-3 text-[#126e3d]" />}
                               {reason === 'Budget-friendly' && <BadgePercent className="h-3 w-3 text-[#f97316]" />}
@@ -827,7 +938,11 @@ export default function ShoppingPage() {
                           disabled={addingItemId === meal.id}
                           className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#126e3d] px-4 py-2.5 text-sm font-black text-white transition hover:bg-[#0f5c33] disabled:opacity-60"
                         >
-                          {addingItemId === meal.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                          {addingItemId === meal.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Plus className="h-4 w-4" />
+                          )}
                           Add items
                         </button>
                       </div>
@@ -850,7 +965,10 @@ export default function ShoppingPage() {
                 ) : (
                   <div className="space-y-3">
                     {addOns.suggestedIngredients.map((ingredient) => (
-                      <div key={ingredient.id} className="rounded-2xl border border-gray-100 bg-white p-4">
+                      <div
+                        key={ingredient.id}
+                        className="rounded-2xl border border-gray-100 bg-white p-4"
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="font-black text-gray-900">{ingredient.name}</p>
@@ -872,7 +990,11 @@ export default function ShoppingPage() {
                             disabled={addingItemId === ingredient.id}
                             className="inline-flex items-center gap-1 rounded-xl bg-[#f97316] px-3 py-2 text-xs font-black text-white transition hover:bg-[#ea580c] disabled:opacity-60"
                           >
-                            {addingItemId === ingredient.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                            {addingItemId === ingredient.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="h-3.5 w-3.5" />
+                            )}
                             Add
                           </button>
                         </div>
@@ -936,7 +1058,11 @@ export default function ShoppingPage() {
                       </button>
 
                       <div className="min-w-0">
-                        <p className={`truncate font-black ${item.is_checked ? 'text-emerald-700 line-through' : 'text-gray-800'}`}>
+                        <p
+                          className={`truncate font-black ${
+                            item.is_checked ? 'text-emerald-700 line-through' : 'text-gray-800'
+                          }`}
+                        >
                           {label}
                         </p>
                         <p className="text-xs font-semibold text-gray-500">
@@ -1005,21 +1131,27 @@ export default function ShoppingPage() {
                     disabled={isPaying || phoneNumber.replace(/[^0-9]/g, '').length < 10}
                     className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white py-4 text-sm font-black uppercase tracking-widest text-emerald-950 transition-all hover:bg-orange-400 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {isPaying ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
+                    {isPaying ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Smartphone size={18} />
+                    )}
                     {isPaying ? 'Processing...' : 'Send STK Push'}
                   </button>
                 </div>
               ) : (
-                <>
-                  <button
-                    onClick={() => void handleMpesaCheckout()}
-                    disabled={isPaying || totals.grandTotal <= 0}
-                    className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white py-4 text-sm font-black uppercase tracking-widest text-emerald-950 transition-all hover:bg-orange-400 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {isPaying ? <Loader2 size={18} className="animate-spin" /> : <Smartphone size={18} />}
-                    {isPaying ? 'Processing...' : 'Pay via M-Pesa'}
-                  </button>
-                </>
+                <button
+                  onClick={() => void handleMpesaCheckout()}
+                  disabled={isPaying || totals.grandTotal <= 0}
+                  className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white py-4 text-sm font-black uppercase tracking-widest text-emerald-950 transition-all hover:bg-orange-400 hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isPaying ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Smartphone size={18} />
+                  )}
+                  {isPaying ? 'Processing...' : 'Pay via M-Pesa'}
+                </button>
               )}
 
               <div className="mt-4 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-emerald-100/45">
