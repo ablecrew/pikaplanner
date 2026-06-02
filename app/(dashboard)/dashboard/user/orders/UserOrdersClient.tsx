@@ -71,6 +71,7 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
 
   const page = data.page
   const totalPages = data.totalPages
+  const totalSpent = data.totalSpent ?? 0
 
   const goToPage = async (next: number) => {
     if (next < 1 || next > totalPages || next === page) return
@@ -113,9 +114,14 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
     })
   }, [data.orders, search, statusFilter])
 
-  const activeOrders = useMemo(() => data.orders.filter(o => ['Pending', 'Processing', 'Preparing', 'On the way'].includes(o.status)), [data.orders])
-  const completedOrders = useMemo(() => data.orders.filter(o => o.status === 'Completed' || o.status === 'delivered'), [data.orders])
-  const totalSpent = completedOrders.reduce((s, o) => s + o.amount, 0)
+  const activeOrders = useMemo(
+    () => data.orders.filter(o => ['Pending', 'Processing', 'Preparing', 'On the way'].includes(o.status)),
+    [data.orders]
+  )
+  const completedOrders = useMemo(
+    () => data.orders.filter(o => o.status === 'Completed' || o.status === 'delivered'),
+    [data.orders]
+  )
   const statuses = ['All', 'Pending', 'Processing', 'Preparing', 'On the way', 'Completed', 'Cancelled', 'Refunded']
 
   return (
@@ -146,7 +152,13 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
           { label: 'Page Orders', value: String(filtered.length), helper: `of ${data.total} total`, icon: Package, accent: 'from-emerald-500 to-emerald-300' },
           { label: 'Active', value: String(activeOrders.length), helper: 'In progress', icon: Clock, accent: 'from-blue-500 to-sky-300' },
           { label: 'Completed', value: String(completedOrders.length), helper: 'Delivered successfully', icon: CheckCircle2, accent: 'from-amber-500 to-amber-300' },
-          { label: 'Total Spent', value: formatMoney(totalSpent), helper: `Page ${page} of ${totalPages}`, icon: ReceiptText, accent: 'from-violet-500 to-fuchsia-300' },
+          {
+            label: 'Total Spent',
+            value: formatMoney(totalSpent),
+            helper: 'All-time completed orders',
+            icon: ReceiptText,
+            accent: 'from-violet-500 to-fuchsia-300',
+          },
         ].map(s => (
           <motion.div key={s.label} whileHover={{ y: -3 }} transition={{ duration: 0.18 }} className="relative overflow-hidden rounded-2xl border border-white/70 bg-white/85 p-5 shadow-sm backdrop-blur">
             <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${s.accent}`} />

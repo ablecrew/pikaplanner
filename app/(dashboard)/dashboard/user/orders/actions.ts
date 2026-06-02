@@ -24,6 +24,7 @@ export type ServerOrder = {
 }
 
 export type OrdersPage = {
+  totalSpent: number
   orders: ServerOrder[]
   total: number
   page: number
@@ -38,7 +39,11 @@ export type OrdersPage = {
 
 const PAGE_SIZE = 20
 
-function formatOrder(order: any, itemMap: Map<string, any[]>, vendorMap: Map<string, any>): ServerOrder {
+function formatOrder(
+  order: any,
+  itemMap: Map<string, any[]>,
+  vendorMap: Map<string, any>
+): ServerOrder {
   const items = itemMap.get(order.id) || []
   const vendor = vendorMap.get(order.vendor_id)
 
@@ -85,8 +90,10 @@ export async function fetchUserOrders(page: number = 1): Promise<OrdersPage> {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
+
   if (!user) {
     return {
+      totalSpent: 0,
       orders: [],
       total: 0,
       page: 1,
@@ -110,22 +117,24 @@ export async function fetchUserOrders(page: number = 1): Promise<OrdersPage> {
     .order('created_at', { ascending: false })
     .range(from, to)
 
-  // If joined query fails (e.g. relations don't exist), fall back to plain
   let orders: any[] = []
   let usedJoin = true
 
   if (joinedRes.error) {
     console.warn('Joined orders query failed, falling back:', joinedRes.error.message)
     usedJoin = false
+
     const plainRes = await supabase
       .from('orders')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .range(from, to)
+
     if (plainRes.error) {
       console.error('Plain orders query also failed:', plainRes.error)
       return {
+        totalSpent: 0,
         orders: [],
         total: 0,
         page: safePage,
@@ -139,16 +148,28 @@ export async function fetchUserOrders(page: number = 1): Promise<OrdersPage> {
     orders = joinedRes.data || []
   }
 
-  // Count total
+  // Count total orders for pagination
   const countRes = await supabase
     .from('orders')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
 
+  // All-time total spent (completed + delivered)
+  const spentRes = await supabase
+    .from('orders')
+    .select('total_amount')
+    .eq('user_id', user.id)
+    .in('status', ['Delivered', 'Completed'])
+
+  const totalSpent = (spentRes.data || []).reduce(
+    (acc, row: any) => acc + Number(row.total_amount || 0),
+    0
+  )
+
   const total = countRes.count || orders.length
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  // Build maps for items and vendors
+  // Build maps for items and vendors (used for joined + plain fallback)
   const itemMap = new Map<string, any[]>()
   const vendorMap = new Map<string, any>()
 
@@ -187,6 +208,7 @@ export async function fetchUserOrders(page: number = 1): Promise<OrdersPage> {
   return {
     orders: mapped,
     total,
+    totalSpent,
     page: safePage,
     pageSize: PAGE_SIZE,
     totalPages,
