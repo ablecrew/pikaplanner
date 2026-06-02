@@ -1,13 +1,11 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { unstable_cache, revalidateTag } from 'next/cache'
 import {
   SORT_OPTIONS,
   CATEGORY_OPTIONS,
   CITY_COORDS,
   PAGE_SIZE,
-  CACHE_TTL,
 } from './constants'
 
 export type VendorStatus = 'Active' | 'Pending' | 'Suspended' | 'Archived'
@@ -262,7 +260,7 @@ async function fetchVendorsRaw(query: VendorsQuery): Promise<VendorsPayload> {
     .select(
       'id, business_name, name, email, phone, whatsapp_number, category, cuisine, location_city, location, location_lat, location_lng, business_description, description, is_active, is_verified, is_accepting_orders, total_orders, rating, average_rating, min_order_amount, delivery_radius_km, prep_time, operating_hours, logo_url, cover_url, created_at',
     )
-    .eq('is_active', true)
+    .eq('is_active', true) // ⚠️ Ensure your test vendor has is_active = true in Supabase
     .order(key.column, { ascending: key.ascending })
     .range(from, to)
 
@@ -350,12 +348,6 @@ function emptyPayload(query: VendorsQuery): VendorsPayload {
   }
 }
 
-const fetchVendorsCached = unstable_cache(
-  async (query: VendorsQuery) => fetchVendorsRaw(query),
-  ['user-vendors'],
-  { revalidate: CACHE_TTL, tags: ['user-vendors'] }
-)
-
 export async function fetchUserVendors(
   raw: Partial<VendorsQuery> = {}
 ): Promise<VendorsPayload> {
@@ -370,10 +362,11 @@ export async function fetchUserVendors(
   }
 
   try {
-    return await fetchVendorsCached(query)
+    // ✅ Calls raw function directly (no cache)
+    return await fetchVendorsRaw(query)
   } catch (err) {
     console.error('Cached vendors failed, falling back:', err)
-    return fetchVendorsRaw(query)
+    return emptyPayload(query)
   }
 }
 
@@ -426,29 +419,23 @@ async function fetchVendorDetailRaw(
   return { ...vendor, recentMeals }
 }
 
-const fetchVendorDetailCached = unstable_cache(
-  async (vendorId: string) => fetchVendorDetailRaw(vendorId),
-  ['user-vendor-detail'],
-  { revalidate: CACHE_TTL, tags: ['user-vendor-detail', 'user-vendors'] }
-)
-
 export async function fetchVendorDetail(
   vendorId: string
 ): Promise<VendorDetail | null> {
   if (!vendorId) return null
   try {
-    return await fetchVendorDetailCached(vendorId)
+    // ✅ Calls raw function directly (no cache)
+    return await fetchVendorDetailRaw(vendorId)
   } catch (err) {
     console.error('Cached vendor detail failed, falling back:', err)
-    return fetchVendorDetailRaw(vendorId)
+    return null
   }
 }
 
 /**
  * Invalidate all vendor-related caches.
- * Call this from a vendor's profile update action.
+ * (Disabled to prevent 500 errors with createClient)
  */
 export async function invalidateVendorCaches() {
-  revalidateTag('user-vendors', 'max')
-  revalidateTag('user-vendor-detail', 'max')
+  // Cache removed
 }

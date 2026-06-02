@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useTransition, useCallback } from 'react'
+import { useState, useEffect, useTransition, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -44,6 +44,9 @@ export default function UserVendorsClient({
   const [error, setError] = useState<string | null>(null)
   const [locating, setLocating] = useState(false)
   const [, startTransition] = useTransition()
+
+  // ✅ FIX: Prevent useEffect from overwriting SSR data on mount
+  const isInitialMount = useRef(true)
 
   const [searchInput, setSearchInput] = useState(
     searchParams.get('search') || ''
@@ -127,7 +130,12 @@ export default function UserVendorsClient({
     [searchParams, router, search, categoryFilter, page, sort, userCoords]
   )
 
+  // ✅ FIX: Skip the first render so we don't overwrite the Server-Side Rendered data
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
     fetchData({ page: 1 })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, categoryFilter, sort])

@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { unstable_cache } from 'next/cache'
 
 export type Meal = {
   id: string
@@ -89,7 +88,6 @@ type VendorMealWithMeal = {
 }
 
 const PAGE_SIZE = 18
-const CACHE_TTL = 60
 
 function sanitize(input: unknown, fallback: string): string {
   if (typeof input !== 'string') return fallback
@@ -170,11 +168,6 @@ async function fetchFacets(): Promise<{
     cuisines: ['All', ...Array.from(cuSet).sort()],
   }
 }
-
-const fetchFacetsCached = unstable_cache(fetchFacets, ['browse-meals-facets'], {
-  revalidate: CACHE_TTL * 5,
-  tags: ['meals-facets'],
-})
 
 async function fetchBrowseMealsRaw(
   query: BrowseMealsQuery,
@@ -294,8 +287,8 @@ async function fetchBrowseMealsRaw(
   const totalMeals = totalRes.count || meals.length
   const totalPages = Math.max(1, Math.ceil(totalMeals / PAGE_SIZE))
 
-  // 3) Facets
-  const facets = await fetchFacetsCached()
+  // 3) Facets (Called directly, no cache)
+  const facets = await fetchFacets()
 
   return {
     meals,
@@ -316,12 +309,6 @@ async function fetchBrowseMealsRaw(
   }
 }
 
-const fetchBrowseMealsCached = unstable_cache(
-  async (query: BrowseMealsQuery) => fetchBrowseMealsRaw(query),
-  ['browse-meals'],
-  { revalidate: CACHE_TTL, tags: ['browse-meals'] },
-)
-
 export async function fetchBrowseMeals(
   raw: Partial<BrowseMealsQuery> = {},
 ): Promise<MealsPayload> {
@@ -333,9 +320,10 @@ export async function fetchBrowseMeals(
   }
 
   try {
-    return await fetchBrowseMealsCached(query)
+    // Call the raw function directly
+    return await fetchBrowseMealsRaw(query)
   } catch (err) {
-    console.error('Cached browse meals failed, falling back:', err)
-    return fetchBrowseMealsRaw(query)
+    console.error('Browse meals failed:', err)
+    return emptyPayload(query)
   }
 }
