@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useTransition } from 'react'
+import { useState, useEffect, useMemo, useTransition } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -63,10 +63,10 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
   const searchParams = useSearchParams()
   const [data, setData] = useState<OrdersPage>(initialData)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [selectedOrder, setSelectedOrder] = useState<ServerOrder | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
   const page = data.page
@@ -82,8 +82,8 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
       startTransition(() => {
         router.push(`?${params.toString()}`)
       })
-      const next_data = await fetchUserOrders(next)
-      setData(next_data)
+      const nextData = await fetchUserOrders(next)
+      setData(nextData)
     } catch (err: any) {
       setError(err.message || 'Failed to load page')
     } finally {
@@ -91,9 +91,22 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
     }
   }
 
+  const refresh = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const next = await fetchUserOrders(page)
+      setData(next)
+    } catch (err: any) {
+      setError(err.message || 'Failed to refresh')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
-    return data.orders.filter(o => {
+    return data.orders.filter((o) => {
       const s = !q || o.orderNumber.toLowerCase().includes(q) || o.vendor.toLowerCase().includes(q) || o.mealName.toLowerCase().includes(q)
       const f = statusFilter === 'All' || o.status === statusFilter
       return s && f
@@ -117,12 +130,8 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
           </h1>
           <p className="mt-1 text-sm text-gray-500">Track your current and past orders.</p>
         </div>
-        <button
-          onClick={() => void goToPage(page)}
-          className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition"
-        >
+        <button onClick={() => void refresh()} className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition">
           <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          Refresh
         </button>
       </div>
 
@@ -139,12 +148,7 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
           { label: 'Completed', value: String(completedOrders.length), helper: 'Delivered successfully', icon: CheckCircle2, accent: 'from-amber-500 to-amber-300' },
           { label: 'Total Spent', value: formatMoney(totalSpent), helper: `Page ${page} of ${totalPages}`, icon: ReceiptText, accent: 'from-violet-500 to-fuchsia-300' },
         ].map(s => (
-          <motion.div
-            key={s.label}
-            whileHover={{ y: -3 }}
-            transition={{ duration: 0.18 }}
-            className="relative overflow-hidden rounded-2xl border border-white/70 bg-white/85 p-5 shadow-sm backdrop-blur"
-          >
+          <motion.div key={s.label} whileHover={{ y: -3 }} transition={{ duration: 0.18 }} className="relative overflow-hidden rounded-2xl border border-white/70 bg-white/85 p-5 shadow-sm backdrop-blur">
             <div className={`absolute inset-x-0 top-0 h-1 bg-gradient-to-r ${s.accent}`} />
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -164,12 +168,7 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
         <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="relative w-full max-w-xs">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search this page..."
-              className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-100 text-gray-900"
-            />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search this page..." className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-100 text-gray-900" />
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {statuses.map(s => (
@@ -190,9 +189,7 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
 
         {loading ? (
           <div className="p-6 space-y-3">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
-            ))}
+            {[...Array(5)].map((_, i) => <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />)}
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-16 flex flex-col items-center gap-3">
@@ -200,9 +197,7 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
               <Package size={28} className="text-blue-500" />
             </div>
             <p className="text-gray-900 font-semibold">No orders found</p>
-            <p className="text-gray-400 text-sm text-center max-w-md">
-              Browse meals and place your first order to see it here.
-            </p>
+            <p className="text-gray-400 text-sm text-center max-w-md">Browse meals and place your first order to see it here.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -259,7 +254,6 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
           </div>
         )}
 
-        {/* Pagination */}
         {!loading && data.total > 0 && (
           <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
             <p className="text-sm text-gray-500">
@@ -317,11 +311,16 @@ export default function UserOrdersClient({ initialData }: { initialData: OrdersP
                     ['Location', selectedOrder.vendorLocation],
                     ['Meal', selectedOrder.mealName],
                     ['Amount', formatMoney(selectedOrder.amount)],
+                    ['Subtotal', formatMoney(selectedOrder.subtotal)],
+                    ['Delivery Fee', formatMoney(selectedOrder.deliveryFee)],
+                    ['Platform Fee', formatMoney(selectedOrder.platformFee)],
+                    ['Net Amount', formatMoney(selectedOrder.netAmount)],
                     ['Payment', selectedOrder.paymentStatus],
                     ['Transaction ID', selectedOrder.transactionId === '—' ? 'Pending' : selectedOrder.transactionId],
                     ['Delivery Address', selectedOrder.deliveryAddress],
                     ['Notes', selectedOrder.customerNotes],
                     ['Created', formatDateTime(selectedOrder.createdAt)],
+                    ['Updated', formatDateTime(selectedOrder.updatedAt)],
                   ].map(([l, v]) => (
                     <div key={String(l)} className="bg-gray-50 rounded-xl p-3">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">{l}</p>

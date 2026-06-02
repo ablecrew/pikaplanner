@@ -2,8 +2,6 @@
 
 import { createClient } from '@/lib/supabase/server'
 
-const PAGE_SIZE = 20
-
 export type ServerOrder = {
   id: string
   orderNumber: string
@@ -11,6 +9,10 @@ export type ServerOrder = {
   vendorLocation: string
   mealName: string
   amount: number
+  subtotal: number
+  deliveryFee: number
+  platformFee: number
+  netAmount: number
   status: string
   paymentStatus: string
   items: number
@@ -18,6 +20,7 @@ export type ServerOrder = {
   customerNotes: string
   transactionId: string
   createdAt: string
+  updatedAt: string
 }
 
 export type OrdersPage = {
@@ -28,8 +31,10 @@ export type OrdersPage = {
   totalPages: number
 }
 
+const PAGE_SIZE = 20
+
 export async function fetchUserOrders(
-  page: number = 1
+  page: number = 1,
 ): Promise<OrdersPage> {
   const safePage = Math.max(1, Math.floor(page))
   const from = (safePage - 1) * PAGE_SIZE
@@ -42,7 +47,13 @@ export async function fetchUserOrders(
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return { orders: [], total: 0, page: 1, pageSize: PAGE_SIZE, totalPages: 0 }
+    return {
+      orders: [],
+      total: 0,
+      page: 1,
+      pageSize: PAGE_SIZE,
+      totalPages: 0,
+    }
   }
 
   // Count + page query in parallel
@@ -71,14 +82,23 @@ export async function fetchUserOrders(
         updated_at,
         order_items ( ingredient_name, item_description, quantity ),
         vendors ( business_name, location_city )
-      `
+      `,
       )
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .range(from, to),
   ])
 
-  if (ordersRes.error) throw ordersRes.error
+  if (ordersRes.error) {
+    console.error('Orders fetch error:', ordersRes.error)
+    return {
+      orders: [],
+      total: 0,
+      page: 1,
+      pageSize: PAGE_SIZE,
+      totalPages: 0,
+    }
+  }
 
   const total = countRes.count || 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -95,13 +115,22 @@ export async function fetchUserOrders(
       mealName = `${first} & ${items.length - 1} more`
     }
 
+    const amount = Number(o.total_amount ?? 0)
+    const deliveryFee = Number(o.delivery_fee ?? 0)
+    const platformFee = Number(o.platform_fee ?? 0)
+    const subtotal = Number(o.subtotal ?? amount)
+
     return {
       id: o.id,
       orderNumber: o.order_number || o.id.slice(0, 8).toUpperCase(),
       vendor: vendor?.business_name || 'Vendor',
       vendorLocation: vendor?.location_city || '—',
       mealName,
-      amount: Math.abs(Number(o.total_amount ?? 0)),
+      amount: Math.abs(amount),
+      subtotal: Math.abs(subtotal),
+      deliveryFee: Math.abs(deliveryFee),
+      platformFee: Math.abs(platformFee),
+      netAmount: Math.abs(amount - deliveryFee - platformFee),
       status: o.status || 'Pending',
       paymentStatus: o.payment_status || 'Pending',
       items: items.length || 1,
@@ -109,6 +138,7 @@ export async function fetchUserOrders(
       customerNotes: o.customer_notes || '—',
       transactionId: o.mpesa_transaction_id || '—',
       createdAt: o.created_at || '',
+      updatedAt: o.updated_at || '',
     }
   })
 
