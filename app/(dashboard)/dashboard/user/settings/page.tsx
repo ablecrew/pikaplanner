@@ -1,4 +1,3 @@
-// app/(dashboard)/dashboard/user/settings/page.tsx
 import UserSettingsClient from './UserSettingsClient'
 import { createClient } from '@/lib/supabase/server'
 import { getUserProfile } from '@/app/actions/manageProfile'
