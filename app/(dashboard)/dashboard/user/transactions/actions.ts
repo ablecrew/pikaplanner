@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { unstable_cache } from 'next/cache'
 
 export type TransactionStatus = 'Successful' | 'Pending' | 'Failed' | 'Refunded'
 
@@ -224,12 +223,6 @@ function emptyPayload(query: TransactionsQuery): TransactionsPayload {
   }
 }
 
-const fetchTransactionsCached = unstable_cache(
-  async (query: TransactionsQuery) => fetchTransactionsRaw(query),
-  ['user-transactions'],
-  { revalidate: CACHE_TTL, tags: ['user-transactions'] }
-)
-
 export async function fetchUserTransactions(
   raw: Partial<TransactionsQuery> = {},
 ): Promise<TransactionsPayload> {
@@ -246,7 +239,7 @@ export async function fetchUserTransactions(
   }
 
   try {
-    return await fetchTransactionsCached(query)
+    return await fetchTransactionsRaw(query)
   } catch (err) {
     console.error('Cached transactions failed, falling back:', err)
     return fetchTransactionsRaw(query)

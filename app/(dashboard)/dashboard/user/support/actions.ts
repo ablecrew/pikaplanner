@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { unstable_cache } from 'next/cache'
 
 export type FaqItem = {
   id: string
@@ -99,15 +98,9 @@ async function fetchSupportRaw(): Promise<SupportPayload> {
   }
 }
 
-const fetchSupportCached = unstable_cache(
-  async () => fetchSupportRaw(),
-  ['user-support'],
-  { revalidate: CACHE_TTL, tags: ['user-support'] }
-)
-
 export async function fetchUserSupport(): Promise<SupportPayload> {
   try {
-    return await fetchSupportCached()
+    return await fetchSupportRaw()
   } catch (err) {
     console.error('Cached support failed, falling back:', err)
     return fetchSupportRaw()

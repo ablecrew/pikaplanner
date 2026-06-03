@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo, useTransition, useCallback } from 'react'
+import { useState, useEffect, useTransition, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell, Legend,
@@ -10,7 +10,6 @@ import {
 import {
   TrendingUp, TrendingDown, ShoppingCart, DollarSign, Heart, MapPin,
   RefreshCw, AlertCircle, Brain, Clock, ChefHat, Loader2,
-  ChevronRight,
 } from 'lucide-react'
 import {
   fetchUserAnalytics,
@@ -75,6 +74,13 @@ export default function UserAnalyticsClient({
   const [error, setError] = useState<string | null>(null)
   const [favoritesCount, setFavoritesCount] = useState(0)
   const [, startTransition] = useTransition()
+  
+  // Wait for browser mount before rendering charts
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Load favorites from localStorage
   useEffect(() => {
@@ -265,13 +271,14 @@ export default function UserAnalyticsClient({
 
       {/* Spending & Day Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        {/* Chart 1: Monthly Spending */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col h-80">
           <div className="mb-4">
             <h3 className="font-bold text-gray-900 text-base leading-tight">Monthly Spending</h3>
             <p className="text-xs text-gray-400 mt-0.5">Summary of food budgets settled per month</p>
           </div>
-          <div className="flex-1 min-h-0">
-            {loading && data.monthlySpending.length === 0 ? (
+          <div className="flex-1 min-h-[200px] w-full">
+            {!mounted || (loading && data.monthlySpending.length === 0) ? (
               <Skeleton className="w-full h-full" />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -283,61 +290,32 @@ export default function UserAnalyticsClient({
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
-                  <XAxis
-                    dataKey="month"
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 12 }}
-                    formatter={(v) => [formatCurrency(Number(v)), 'Spending']}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="amount"
-                    stroke="#10b981"
-                    strokeWidth={2.5}
-                    fill="url(#userSpendGrad)"
-                    dot={{ fill: '#10b981', r: 3 }}
-                  />
+                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 12 }} formatter={(v) => [formatCurrency(Number(v)), 'Spending']} />
+                  <Area type="monotone" dataKey="amount" stroke="#10b981" strokeWidth={2.5} fill="url(#userSpendGrad)" dot={{ fill: '#10b981', r: 3 }} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
           </div>
         </div>
 
+        {/* Chart 2: Orders by Day */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col h-80">
           <div className="mb-4">
             <h3 className="font-bold text-gray-900 text-base leading-tight">Orders by Day</h3>
             <p className="text-xs text-gray-400 mt-0.5">Frequencies of orders completed on days of week</p>
           </div>
-          <div className="flex-1 min-h-0">
-            {loading && data.ordersByDay.length === 0 ? (
+          <div className="flex-1 min-h-[200px] w-full">
+            {!mounted || (loading && data.ordersByDay.length === 0) ? (
               <Skeleton className="w-full h-full" />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.ordersByDay}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f5" />
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: '#9ca3af' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 12 }}
-                  />
+                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 12 }} />
                   <Bar dataKey="orders" fill="#3b82f6" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -348,6 +326,7 @@ export default function UserAnalyticsClient({
 
       {/* Vendors & Categories */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Favorite Kitchens */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col h-80 overflow-y-auto">
           <div className="mb-4">
             <h3 className="font-bold text-gray-900 text-base leading-tight">Favorite Kitchens</h3>
@@ -383,40 +362,27 @@ export default function UserAnalyticsClient({
           )}
         </div>
 
+        {/* Chart 3: Orders by Category */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col h-80">
           <div className="mb-4">
             <h3 className="font-bold text-gray-900 text-base leading-tight">Orders by Category</h3>
             <p className="text-xs text-gray-400 mt-0.5">Visual representation of your preferred meal types</p>
           </div>
-          <div className="flex-1 min-h-0">
-            {data.categoryBreakdown.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-sm text-gray-400 italic">
+          <div className="flex-1 min-h-[200px] w-full">
+            {!mounted || data.categoryBreakdown.length === 0 ? (
+              <div className="w-full h-full flex items-center justify-center text-sm text-gray-400 italic">
                 No category data yet
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={data.categoryBreakdown}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
+                  <Pie data={data.categoryBreakdown} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
                     {data.categoryBreakdown.map((_, index) => (
                       <Cell key={index} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 12 }}
-                  />
-                  <Legend
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
-                  />
+                  <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', fontSize: 12 }} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 4 }} />
                 </PieChart>
               </ResponsiveContainer>
             )}

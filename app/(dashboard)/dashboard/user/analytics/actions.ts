@@ -1,7 +1,6 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { unstable_cache } from 'next/cache'
 
 export type DateRange = '7d' | '30d' | '180d' | '365d'
 
@@ -97,14 +96,6 @@ function buildInsights(totals: AnalyticsPayload['totals'], peakDay: DayData | un
 
   return insights
 }
-
-const fetchAnalyticsCached = unstable_cache(
-  async (range: DateRange, _favoritesCount: number) =>
-    fetchAnalyticsRaw(range, _favoritesCount),
-  ['user-analytics'],
-  { revalidate: 60, tags: ['user-analytics'] }
-)
-
 async function fetchAnalyticsRaw(
   range: DateRange,
   favoritesCount: number,
@@ -347,7 +338,7 @@ export async function fetchUserAnalytics(
   favoritesCount: number = 0,
 ): Promise<AnalyticsPayload> {
   try {
-    return await fetchAnalyticsCached(range, favoritesCount)
+    return await fetchAnalyticsRaw(range, favoritesCount)
   } catch (err) {
     console.error('Cached analytics failed, falling back:', err)
     return fetchAnalyticsRaw(range, favoritesCount)
