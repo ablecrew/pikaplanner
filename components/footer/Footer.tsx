@@ -16,6 +16,7 @@ import {
   MoonStar,
 } from 'lucide-react';
 import { FaGooglePlay, FaFacebook, FaInstagram, FaYoutube, FaTwitter } from 'react-icons/fa';
+import CookieSettingsButton from '@/components/cookie-consent/CookieSettingsButton'
 // Placeholder for PikaLogo since it's an external component
 const PikaLogo = ({ size = 32 }: { size?: number }) => (
   <svg
@@ -53,6 +54,13 @@ const CONNECT_LINKS = [
   { href: '/privacy', label: 'Privacy Policy' },
   { href: '/cookies', label: 'Cookie Policy' },
 ];
+
+<div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+  <Link href="/privacy" className="hover:text-[#1A5C3A]">Privacy Policy</Link>
+  <Link href="/terms" className="hover:text-[#1A5C3A]">Terms of Service</Link>
+  <Link href="/cookies" className="hover:text-[#1A5C3A]">Cookie Policy</Link>
+  <CookieSettingsButton />
+</div>
 export default function Footer() {
   const currentYear = new Date().getFullYear();
   return (
