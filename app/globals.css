@@ -86,3 +86,249 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #d1d5db;
 }
+
+/* ─────────────────────────────────────────────────────────
+   📖 GUIDE BOOK STYLES
+   ───────────────────────────────────────────────────────── */
+.book-container {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  height: min(75vh, 720px);
+  perspective: 2500px;
+  perspective-origin: center center;
+  margin-inline: auto;
+}
+
+.book-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(to right, #fefefe 0%, #ffffff 8%, #ffffff 100%);
+  border-radius: 4px 16px 16px 4px;
+  box-shadow:
+    /* page edge stack (book pages) */
+    -1px 0 0 #e5e7eb,
+    -2px 0 0 #f3f4f6,
+    -3px 0 0 #e5e7eb,
+    -4px 0 0 #f3f4f6,
+    -5px 0 0 #e5e7eb,
+    /* outer drop shadow */
+    0 24px 50px -12px rgba(0, 0, 0, 0.25),
+    0 8px 16px -4px rgba(0, 0, 0, 0.1);
+  transform-style: preserve-3d;
+  transform-origin: left center;
+  overflow: hidden;
+  transition: none;
+}
+
+/* Subtle paper texture — uses CSS gradients (no asset needed) */
+.book-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at top left, rgba(0, 0, 0, 0.02), transparent 50%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      transparent 2px,
+      rgba(0, 0, 0, 0.005) 2px,
+      rgba(0, 0, 0, 0.005) 3px
+    );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Inner book spine shadow on the left */
+.book-page::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 36px;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.18) 0%,
+    rgba(0, 0, 0, 0.05) 40%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Outer edge highlight on the right side of the page */
+.book-edge-shadow {
+  position: absolute;
+  right: -2px;
+  top: 4%;
+  bottom: 4%;
+  width: 4px;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.06) 0%,
+    transparent 100%
+  );
+  border-radius: 0 4px 4px 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Decorative spine binding behind the book */
+.book-binding {
+  position: absolute;
+  left: -8px;
+  top: 2%;
+  bottom: 2%;
+  width: 16px;
+  background: linear-gradient(
+    to right,
+    #4a3520 0%,
+    #6b4a2e 40%,
+    #5a3f28 100%
+  );
+  border-radius: 4px 0 0 4px;
+  box-shadow:
+    inset -4px 0 8px rgba(0, 0, 0, 0.3),
+    -2px 0 8px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── Flip Animations ─────────────────────────────────── */
+@keyframes flipNext {
+  0% {
+    transform: rotateY(0deg);
+    box-shadow:
+      -1px 0 0 #e5e7eb, -2px 0 0 #f3f4f6, -3px 0 0 #e5e7eb,
+      -4px 0 0 #f3f4f6, -5px 0 0 #e5e7eb,
+      0 24px 50px -12px rgba(0, 0, 0, 0.25);
+  }
+  50% {
+    box-shadow:
+      -1px 0 0 #e5e7eb,
+      0 36px 70px -8px rgba(0, 0, 0, 0.4),
+      -20px 20px 40px rgba(0, 0, 0, 0.2);
+  }
+  100% {
+    transform: rotateY(-180deg);
+    box-shadow:
+      -1px 0 0 #e5e7eb,
+      0 24px 50px -12px rgba(0, 0, 0, 0.25);
+  }
+}
+
+@keyframes flipPrev {
+  0% {
+    transform: rotateY(-180deg);
+  }
+  50% {
+    box-shadow:
+      -1px 0 0 #e5e7eb,
+      0 36px 70px -8px rgba(0, 0, 0, 0.4),
+      20px 20px 40px rgba(0, 0, 0, 0.2);
+  }
+  100% {
+    transform: rotateY(0deg);
+  }
+}
+
+.book-page.flipping-next {
+  animation: flipNext 0.4s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+.book-page.flipping-prev {
+  animation: flipPrev 0.4s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+/* ── Mobile: Cover-Slide Animation ───────────────────── */
+@media (max-width: 640px) {
+  .book-container {
+    perspective: none;
+    height: min(80vh, 650px);
+    max-width: 100%;
+    padding-inline: 0;
+  }
+
+  .book-page {
+    border-radius: 12px;
+    box-shadow:
+      0 12px 30px -8px rgba(0, 0, 0, 0.2),
+      0 4px 12px -2px rgba(0, 0, 0, 0.1);
+    transform-origin: center;
+  }
+
+  .book-page::after {
+    display: none; /* no spine shadow on mobile */
+  }
+
+  @keyframes slideNext {
+    0% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: translateX(-30%) scale(0.95);
+      opacity: 0.3;
+    }
+    51% {
+      transform: translateX(30%) scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slidePrev {
+    0% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+    50% {
+      transform: translateX(30%) scale(0.95);
+      opacity: 0.3;
+    }
+    51% {
+      transform: translateX(-30%) scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0) scale(1);
+      opacity: 1;
+    }
+  }
+
+  .book-page.flipping-next {
+    animation: slideNext 0.4s ease-in-out forwards;
+  }
+
+  .book-page.flipping-prev {
+    animation: slidePrev 0.4s ease-in-out forwards;
+  }
+}
+
+/* ── Custom scrollbar inside pages ───────────────────── */
+.book-page .custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.book-page .custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.book-page .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+.book-page .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .book-page.flipping-next,
+  .book-page.flipping-prev {
+    animation-duration: 0.15s;
+  }
+}

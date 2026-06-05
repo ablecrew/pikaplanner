@@ -79,12 +79,36 @@ const BENEFITS = [
   { icon: Megaphone, title: 'Marketing Support', description: 'Get featured placements, seasonal promotions, and social media exposure.', color: '#32CD32' },
   { icon: Bell, title: 'Order Notifications', description: 'Real-time alerts for every order so you never miss a sale.', color: '#F4A535' },
 ];
-const COMMISSION_PLANS = [
-  { name: 'Basic', commission: '15%', price: 'Free', features: ['List up to 10 meals', 'Standard support', 'Basic analytics', 'Order notifications'] },
-  { name: 'Pro', commission: '12%', price: '499 KES/mo', features: ['Unlimited meals', 'Priority support', 'Advanced analytics', 'Featured in search', 'Promotional tools'], popular: true },
-  { name: 'Premium', commission: '10%', price: '999 KES/mo', features: ['Unlimited meals', 'Dedicated account manager', 'Full analytics suite', 'Homepage featured placement', 'Priority order queue', 'Custom branding'] },
-];
+// ✅ ADD THIS
+const VENDOR_SUBSCRIPTION = {
+  name: 'Pika Plan Vendor',
+  price: '999',
+  currency: 'KES',
+  period: 'month',
+  tagline: 'Everything you need to grow your food business — one simple price.',
+  highlights: [
+    'Zero commission on orders — keep 100% of your sales',
+    'Cancel anytime, no long-term contract',
+    '7-day free trial for new vendors',
+  ],
+  features: [
+    { icon: UtensilsCrossed, text: 'Unlimited meal listings' },
+    { icon: BarChart3, text: 'Full analytics & sales dashboard' },
+    { icon: Megaphone, text: 'Featured placement in search & homepage' },
+    { icon: Bell, text: 'Real-time order notifications (SMS + push)' },
+    { icon: Sparkles, text: 'Promotional tools & seasonal campaigns' },
+    { icon: ShieldCheck, text: 'Priority customer & technical support' },
+    { icon: User, text: 'Dedicated vendor account manager' },
+    { icon: Camera, text: 'Free professional menu photography (Nairobi)' },
+    { icon: TrendingUp, text: 'AI-powered demand forecasting' },
+    { icon: DollarSign, text: 'Weekly M-Pesa payouts — no transfer fees' },
+    { icon: Star, text: 'Verified vendor badge on your profile' },
+    { icon: Target, text: 'Targeted marketing to Smart Meal users' },
+  ],
+};
 const FAQS = [
+  { q: "How much does it cost to join?", a: "999 KES per month — flat rate. No commission on orders, no setup fees, no hidden charges. New vendors get a 7-day free trial to test the platform risk-free."},
+  { q: "Do you take a commission on my sales?", a: "No. Unlike most platforms, Pika Plan charges a flat monthly subscription and takes 0% commission. You keep 100% of every order — minus standard M-Pesa transaction fees set by Safaricom."},
   { q: "How long does approval take?", a: "Applications are typically reviewed within 1\u20133 business days. You\u2019ll receive an email notification as soon as a decision is made, along with next steps to set up your vendor dashboard." },
   { q: "When do I get paid?", a: "Payouts are processed weekly on Mondays via M-Pesa or bank transfer. You can view your earnings and pending payouts in the Vendor Dashboard at any time." },
   { q: "What if I can\u2019t fulfill an order?", a: "You can mark yourself unavailable temporarily from the dashboard. For individual orders, you can decline within 5 minutes of receiving the notification with no penalty." },
@@ -860,60 +884,141 @@ export default function VendorSignupPage() {
           </div>
         </div>
       </section>
-      {/* 5. COMMISSION / PRICING */}
-      <section className="px-6 py-20 bg-[#f8faf8]">
-        <div className="mx-auto max-w-6xl">
-          <div className="text-center mb-14">
-            <h2 className="text-3xl font-bold text-slate-900 md:text-5xl" style={{ fontFamily: 'Poppins, sans-serif' }}>
-              Vendor Plans
-            </h2>
-            <p className="mt-4 text-lg text-slate-600">Choose the plan that fits your business.</p>
+      {/* 5. VENDOR SUBSCRIPTION */}
+<section className="px-6 py-20 bg-[#f8faf8]">
+  <div className="mx-auto max-w-5xl">
+    <div className="text-center mb-14">
+      <div className="inline-flex items-center gap-2 bg-[#32CD32]/10 border border-[#32CD32]/20 px-4 py-1.5 rounded-full mb-4">
+        <Sparkles size={14} className="text-[#126e3d]" />
+        <span className="text-sm font-semibold text-[#126e3d]">One Plan. Everything Included.</span>
+      </div>
+      <h2
+        className="text-3xl font-bold text-slate-900 md:text-5xl"
+        style={{ fontFamily: 'Poppins, sans-serif' }}
+      >
+        Simple, Transparent Pricing
+      </h2>
+      <p className="mt-4 text-lg text-slate-600 max-w-2xl mx-auto">
+        {VENDOR_SUBSCRIPTION.tagline}
+      </p>
+    </div>
+
+    {/* Main Pricing Card */}
+    <div className="relative bg-white rounded-3xl shadow-2xl border-2 border-[#32CD32] overflow-hidden">
+      {/* Decorative gradient */}
+      <div className="absolute top-0 right-0 w-72 h-72 bg-[#32CD32]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+      <div className="absolute bottom-0 left-0 w-72 h-72 bg-[#F4A535]/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none" />
+
+      {/* Popular badge */}
+      <div className="absolute top-6 right-6 bg-gradient-to-r from-[#32CD32] to-[#1A5C3A] text-white text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-1.5 shadow-lg">
+        <Sparkles size={12} /> Best Value
+      </div>
+
+      <div className="relative grid lg:grid-cols-5 gap-0">
+        {/* LEFT: Pricing summary */}
+        <div className="lg:col-span-2 p-8 lg:p-10 lg:border-r border-slate-100 bg-gradient-to-br from-[#0a2d1d] via-[#126e3d] to-[#1A5C3A] text-white lg:rounded-l-3xl">
+          <h3 className="text-2xl font-black mb-2">{VENDOR_SUBSCRIPTION.name}</h3>
+          <p className="text-white/70 text-sm leading-relaxed">
+            Built for serious food entrepreneurs ready to scale.
+          </p>
+
+          <div className="mt-6 flex items-baseline gap-2">
+            <span className="text-5xl font-black">{VENDOR_SUBSCRIPTION.price}</span>
+            <span className="text-white/80 text-lg font-semibold">{VENDOR_SUBSCRIPTION.currency}</span>
+            <span className="text-white/60">/{VENDOR_SUBSCRIPTION.period}</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {COMMISSION_PLANS.map((plan) => (
-              <div
-                key={plan.name}
-                className={`relative bg-white rounded-2xl p-6 ${
-                  plan.popular
-                    ? 'border-2 border-[#32CD32] shadow-xl shadow-[#32CD32]/20'
-                    : 'border border-slate-200'
-                }`}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-[#32CD32] to-[#1A5C3A] text-white text-xs font-bold px-4 py-1.5 rounded-full flex items-center gap-1.5">
-                    <Sparkles size={12} /> Most Popular
-                  </div>
-                )}
-                <h3 className="text-xl font-bold text-slate-900 mt-2">{plan.name}</h3>
-                <div className="mt-3">
-                  <span className="text-4xl font-black text-[#126e3d]">{plan.commission}</span>
-                  <span className="text-slate-600 text-sm ml-1">commission</span>
+          <p className="text-xs text-white/60 mt-1">Billed monthly via M-Pesa or card</p>
+
+          {/* Highlights */}
+          <div className="mt-8 space-y-3">
+            {VENDOR_SUBSCRIPTION.highlights.map((highlight, idx) => (
+              <div key={idx} className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-[#32CD32] flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
                 </div>
-                <p className="text-sm text-slate-500 mt-1">{plan.price}</p>
-                <ul className="mt-6 space-y-3">
-                  {plan.features.map((feature, idx) => (
-                    <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
-                      <CheckCircle2 className="w-5 h-5 text-[#32CD32] flex-shrink-0 mt-0.5" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  onClick={scrollToForm}
-                  className={`w-full mt-6 py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                    plan.popular
-                      ? 'bg-gradient-to-r from-[#32CD32] to-[#1A5C3A] text-white hover:shadow-lg hover:shadow-[#32CD32]/30'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  <ArrowRight className="w-4 h-4" />
-                  Get Started
-                </button>
+                <p className="text-sm text-white/90 font-medium leading-relaxed">{highlight}</p>
               </div>
             ))}
           </div>
+
+          {/* CTA */}
+          <button
+            onClick={scrollToForm}
+            className="w-full mt-8 inline-flex items-center justify-center gap-2 bg-[#f97316] hover:bg-[#ea580c] text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all hover:-translate-y-0.5"
+          >
+            <Store className="w-5 h-5" />
+            Get Started
+            <ArrowRight className="w-5 h-5" />
+          </button>
+
+          <p className="text-xs text-white/60 text-center mt-4">
+            🎁 First 7 days free • Cancel anytime
+          </p>
         </div>
-      </section>
+
+        {/* RIGHT: Feature grid */}
+        <div className="lg:col-span-3 p-8 lg:p-10">
+          <h4 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-5">
+            Everything You Get
+          </h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {VENDOR_SUBSCRIPTION.features.map((feature, idx) => {
+              const IconComp = feature.icon;
+              return (
+                <div
+                  key={idx}
+                  className="flex items-start gap-3 group"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-[#32CD32]/10 flex items-center justify-center flex-shrink-0 group-hover:bg-[#32CD32]/20 transition-colors">
+                    <IconComp className="w-4.5 h-4.5 text-[#126e3d]" size={18} />
+                  </div>
+                  <p className="text-sm text-slate-700 font-medium leading-relaxed pt-1.5">
+                    {feature.text}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Trust line */}
+          <div className="mt-8 pt-6 border-t border-slate-100 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+            <div className="flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-[#32CD32]" />
+              <span>Secure M-Pesa billing</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-[#32CD32]" />
+              <span>No setup fees</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <X className="w-4 h-4 text-[#32CD32]" />
+              <span>Cancel anytime</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {/* Below-card reassurance */}
+    <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
+      <div className="text-center p-4">
+        <DollarSign className="w-6 h-6 text-[#32CD32] mx-auto mb-2" />
+        <p className="text-sm font-semibold text-slate-900">0% Commission</p>
+        <p className="text-xs text-slate-500 mt-1">Keep 100% of every sale</p>
+      </div>
+      <div className="text-center p-4">
+        <Clock className="w-6 h-6 text-[#32CD32] mx-auto mb-2" />
+        <p className="text-sm font-semibold text-slate-900">7-Day Free Trial</p>
+        <p className="text-xs text-slate-500 mt-1">Try risk-free</p>
+      </div>
+      <div className="text-center p-4">
+        <Sparkles className="w-6 h-6 text-[#32CD32] mx-auto mb-2" />
+        <p className="text-sm font-semibold text-slate-900">All Features</p>
+        <p className="text-xs text-slate-500 mt-1">No upsells, no tiers</p>
+      </div>
+    </div>
+  </div>
+</section>
       {/* 8. TESTIMONIALS ─ */}
       <section className="px-6 py-20 bg-white">
         <div className="mx-auto max-w-6xl">
