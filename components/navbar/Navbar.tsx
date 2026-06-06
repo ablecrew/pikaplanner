@@ -26,6 +26,7 @@ import {
   Store,
   BarChart3,
   ReceiptText,
+  Briefcase,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
@@ -71,24 +72,28 @@ const ROLE_NAV: Record<Role, NavItem[]> = {
     { href: '/meal-plans', label: 'Meal Plans', icon: Calendar },
     { href: '/discover', label: 'Discover', icon: UtensilsCrossed },
     { href: '/shopping', label: 'Shopping', icon: ShoppingCart },
+    { href: '/careers', label: 'Careers', icon: Briefcase },
   ],
   vendor: [
     { href: '/dashboard/vendor/overview', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/dashboard/vendor/meals', label: 'Meals', icon: UtensilsCrossed },
     { href: '/dashboard/vendor/orders', label: 'Orders', icon: Package },
     { href: '/dashboard/vendor/transactions', label: 'Transactions', icon: ReceiptText },
+    { href: '/careers', label: 'Careers', icon: Briefcase },
   ],
   admin: [
     { href: '/dashboard/admin/overview', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/dashboard/admin/users', label: 'Users', icon: Users },
     { href: '/dashboard/admin/vendors', label: 'Vendors', icon: Store },
     { href: '/dashboard/admin/analytics', label: 'Analytics', icon: BarChart3 },
+    { href: '/careers', label: 'Careers', icon: Briefcase },
   ],
   superadmin: [
     { href: '/dashboard/admin/overview', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/dashboard/admin/users', label: 'Users', icon: Users },
     { href: '/dashboard/admin/vendors', label: 'Vendors', icon: Store },
     { href: '/dashboard/admin/analytics', label: 'Analytics', icon: BarChart3 },
+    { href: '/careers', label: 'Careers', icon: Briefcase },
   ],
 }
 

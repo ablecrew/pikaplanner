@@ -9,7 +9,8 @@ import {
   LayoutDashboard, Users, Store, UtensilsCrossed, ShoppingCart, CreditCard,
   BarChart3, Bell, Settings, LogOut, Menu, X, ChevronDown, Search,
   User as UserIcon, Package, Heart, HelpCircle, BarChart4, Leaf, Crown,
-  Calendar, Home, Compass, Sparkles, ShoppingBag
+  Calendar, Home, Compass, Sparkles, ShoppingBag,
+  Building2
 } from 'lucide-react'
 
 type Role = 'user' | 'vendor' | 'admin' | 'superadmin'
@@ -32,6 +33,7 @@ const adminSidebar: SidebarItem[] = [
   { label: 'Analytics', icon: <BarChart3 size={18} />, path: '/dashboard/admin/analytics' },
   { label: 'Notifications', icon: <Bell size={18} />, path: '/dashboard/admin/notifications' },
   { label: 'Subscriptions', icon: <Crown size={18} />, path: '/dashboard/admin/subscriptions' },
+  { label: 'Careers', icon: <Building2 size={18} />, path: '/dashboard/admin/careers' },
   { label: 'Settings', icon: <Settings size={18} />, path: '/dashboard/admin/settings' },
 ]
 
