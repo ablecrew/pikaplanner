@@ -543,11 +543,11 @@ export default function HelpPage() {
                   <span>8:00 AM – 8:00 PM EAT</span>
                 </li>
                 <li className="flex justify-between text-gray-700">
-                  <span className="font-semibold">Saturday</span>
+                  <span className="font-semibold">Sunday</span>
                   <span>9:00 AM – 6:00 PM EAT</span>
                 </li>
                 <li className="flex justify-between text-gray-700">
-                  <span className="font-semibold">Sunday</span>
+                  <span className="font-semibold">Saturday</span>
                   <span className="text-[#f97316]">WhatsApp & Email only</span>
                 </li>
               </ul>
