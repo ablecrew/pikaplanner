@@ -58,7 +58,8 @@ const userSidebar: SidebarItem[] = [
   { label: 'Transactions', icon: <CreditCard size={18} />, path: '/dashboard/user/transactions' },
   { label: 'Notifications', icon: <Bell size={18} />, path: '/dashboard/user/notifications' },
   { label: 'Analytics', icon: <BarChart4 size={18} />, path: '/dashboard/user/analytics' },
-  { label: 'Meal Plan', icon: <Calendar size={18} />, path: '/dashboard/user/subscription' },
+  { label: 'Subscriptions', icon: <Crown size={18} />, path: '/dashboard/user/subscription' },
+  { label: 'Meal Plan', icon: <Calendar size={18} />, path: '/meal-plans' },
   { label: 'Help & Support', icon: <HelpCircle size={18} />, path: '/dashboard/user/support' },
   { label: 'Settings', icon: <Settings size={18} />, path: '/dashboard/user/settings' },
 ]

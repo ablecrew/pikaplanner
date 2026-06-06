@@ -120,7 +120,7 @@ export const FOUNDERS: Founder[] = [
     role: 'Founder & CEO',
     shortBio: 'Spaxmedia company lead. Building Pika Plan to make meal planning effortless for every Kenyan household.',
     bio:
-      'Ontita is the founder and CEO of Pika Plan. Before starting the company, he spent 6 years at Safaricom, where he led product teams for M-Pesa\'s consumer payment products. He holds a Bachelor\'s in Computer Science from the University of Nairobi and an MBA from Strathmore Business School. David lives in Nairobi with his wife and two children, who are also Pika Plan\'s most demanding beta testers.',
+      'Ontita is the founder and CEO of Pika Plan. Before starting the company, he spent 6 years at Spaxmedia, where he led product teams in producing solution products. He holds a Bachelor\'s in Computer Science from the University of Nairobi and an MBA from Strathmore Business School. Ontita lives in Nairobi with his family, who are also Pika Plan\'s most demanding beta testers.',
     linkedinUrl: 'https://linkedin.com/in/brianontita',
     twitterUrl: 'https://twitter.com/brianontita',
     email: 'ontitabrian@pikaplan.com',
