@@ -274,7 +274,7 @@ function ProfileDropdown({
 }) {
   const menuItems = [
     { href: '/profile', label: 'My Profile', icon: User },
-    { href: '/profile/settings', label: 'Settings', icon: Settings },
+    { href: '/profile/settings', label: 'Account Settings', icon: Settings },
     ...(profile?.role === 'vendor'
       ? [{ href: '/dashboard/vendor/overview', label: 'Vendor Dashboard', icon: ChefHat }]
       : []),
@@ -709,7 +709,7 @@ export default function Navbar() {
                 <div className="w-8.5 h-8.5 rounded-lg bg-white/10 flex items-center justify-center">
                   <Settings size={16} className="text-white/75" />
                 </div>
-                <span className="text-sm text-white/85 font-medium">Settings</span>
+                <span className="text-sm text-white/85 font-medium">Account Settings</span>
               </Link>
             </div>
 
