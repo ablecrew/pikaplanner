@@ -2,13 +2,14 @@
 
 import { useState, useMemo, useCallback, useEffect, useTransition, type ComponentType, type FormEvent } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import Navbar from '@/components/navbar/Navbar'
 import Footer from '@/components/footer/Footer'
 import {
-  Sparkles, CalendarDays, UtensilsCrossed, WandSparkles, PencilLine, ArrowRight, Clock3, Users, Flame, ChefHat, ListChecks, CheckCircle2, Loader2, RefreshCw, Copy, Share2, BookmarkPlus, ShoppingCart, Leaf, Drumstick, Salad, Sprout, Dumbbell, Scale, Coffee, Sandwich, Apple, Globe2, ShieldCheck, Crown, Plus,
+  Sparkles, CalendarDays, UtensilsCrossed, WandSparkles, PencilLine, ArrowRight, Clock3, Users, Flame, ChefHat, ListChecks, CheckCircle2, Loader2, RefreshCw, Copy, Share2, BookmarkPlus, ShoppingCart, Leaf, Drumstick, Salad, Sprout, Dumbbell, Scale, Coffee, Sandwich, Apple, Globe2, ShieldCheck, Crown, Plus, Lock, TrendingUp, Gauge, AlertCircle,
 } from 'lucide-react'
-import { 
-  MealGeneratorData, MealOption, DietaryPreference, MealSlot, SavedMealPreferences 
+import {
+  MealGeneratorData, MealOption, DietaryPreference, MealSlot, SavedMealPreferences, SubscriptionInfo,
 } from './actions'
 
 const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -114,7 +115,213 @@ function MealSlotCard({ slot, mealName, matchedMeal }: { slot: MealSlot; mealNam
   )
 }
 
+// ── 🆕 Subscription Gate (shown to non-subscribers) ───────────
+const GATE_FEATURES = [
+  { icon: WandSparkles, title: 'AI Meal Generation', description: 'Personalized 3-14 day plans generated from your preferences.', color: 'bg-violet-50 text-violet-600' },
+  { icon: PencilLine, title: 'Manual Builder', description: 'Hand-pick exact meals from the curated catalogue.', color: 'bg-emerald-50 text-emerald-600' },
+  { icon: ShoppingCart, title: 'Auto Shopping Lists', description: 'Ingredient lists generated from your plan, ready to copy.', color: 'bg-orange-50 text-orange-600' },
+  { icon: ChefHat, title: 'Premium Cuisines', description: 'Unlock all cuisines, dietary modes, and snacks.', color: 'bg-sky-50 text-sky-600' },
+]
+
+const GATE_PLANS = [
+  { tier: 'daily',   label: 'Daily',   price: 14,    duration: 'per day',   popular: false },
+  { tier: 'weekly',  label: 'Weekly',  price: 50,    duration: 'per week',  popular: true },
+  { tier: 'monthly', label: 'Monthly', price: 199,   duration: 'per month', popular: false },
+  { tier: 'yearly',  label: 'Yearly',  price: 2200,  duration: 'per year',  popular: false },
+]
+
+function SubscriptionGate({ subscription }: { subscription: SubscriptionInfo }) {
+  const isExpired = !subscription.isActive && subscription.tier && subscription.tier !== 'free'
+
+  return (
+    <>
+      <Navbar />
+      <div className="min-h-screen bg-gradient-to-b from-white to-[#f8faf8]">
+        <section className="relative overflow-hidden bg-gradient-to-br from-[#0a2d1d] via-[#126e3d] to-[#1A5C3A] px-6 py-16 lg:py-20">
+          <div className="absolute top-0 right-0 w-72 h-72 bg-[#32CD32]/15 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          <div className="absolute bottom-0 left-0 w-56 h-56 bg-[#F4A535]/15 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
+          <div className="relative z-10 mx-auto max-w-3xl text-center">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/15 backdrop-blur px-4 py-2 text-xs font-black uppercase tracking-wider mb-4 text-white">
+              {isExpired ? <Lock size={12} /> : <Crown size={12} className="text-[#F4A535]" />}
+              {isExpired ? 'Subscription Expired' : 'Premium Feature'}
+            </div>
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-white mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+              {isExpired ? 'Renew to keep generating' : 'Unlock the meal generator'}
+            </h1>
+            <p className="text-lg text-white/80 leading-relaxed mb-8 max-w-xl mx-auto">
+              {isExpired
+                ? `Your ${subscription.tier} plan has expired. Renew now to continue generating personalized meal plans.`
+                : 'Subscribe to start generating personalized meal plans tailored to your preferences, dietary needs, and budget.'}
+            </p>
+            <Link
+              href="/dashboard/user/subscription"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[#f97316] hover:bg-[#ea580c] px-7 py-4 text-sm font-black uppercase text-white shadow-lg hover:shadow-xl transition hover:-translate-y-0.5"
+            >
+              <Sparkles size={16} />
+              {isExpired ? 'Renew Subscription' : 'Start From KES 14/day'}
+              <ArrowRight size={16} />
+            </Link>
+          </div>
+        </section>
+
+        <section className="px-6 py-12">
+          <div className="mx-auto max-w-6xl">
+            <h2 className="text-3xl font-black text-slate-950 mb-8 text-center">What you'll unlock</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+              {GATE_FEATURES.map((feature) => {
+                const Icon = feature.icon
+                return (
+                  <div key={feature.title} className="rounded-2xl border border-slate-200 bg-white p-6 hover:border-emerald-300 hover:shadow-md transition">
+                    <div className={`mb-3 flex h-11 w-11 items-center justify-center rounded-xl ${feature.color}`}>
+                      <Icon size={20} />
+                    </div>
+                    <h3 className="font-black text-slate-900 text-sm mb-1">{feature.title}</h3>
+                    <p className="text-xs text-slate-600 leading-relaxed">{feature.description}</p>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="rounded-3xl border border-slate-100 bg-white p-6 md:p-8 shadow-sm">
+              <h2 className="text-xl font-black text-slate-950 mb-6 text-center">Choose your plan</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {GATE_PLANS.map((plan) => (
+                  <Link
+                    key={plan.tier}
+                    href="/dashboard/user/subscription"
+                    className={`group relative rounded-2xl border-2 p-5 text-center transition hover:-translate-y-1 ${
+                      plan.popular ? 'border-violet-300 bg-violet-50/30 hover:border-violet-400' : 'border-slate-200 hover:border-emerald-300 hover:shadow-md'
+                    }`}
+                  >
+                    {plan.popular && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white text-[9px] font-black uppercase tracking-wider">
+                        Popular
+                      </div>
+                    )}
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">{plan.label}</p>
+                    <p className="text-2xl font-black text-slate-950">KES {plan.price}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">{plan.duration}</p>
+                  </Link>
+                ))}
+              </div>
+              <div className="mt-6 text-center">
+                <Link href="/dashboard/user/subscription" className="inline-flex items-center gap-1.5 text-sm font-black text-[#126e3d] hover:underline">
+                  View all plans & features <ArrowRight size={14} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <Footer />
+    </>
+  )
+}
+
+// ── 🆕 Usage Meter Component ──────────────────────────────────
+function UsageMeter({ subscription }: { subscription: SubscriptionInfo }) {
+  const dailyUsagePercent =
+    subscription.dailyLimit > 0
+      ? Math.min(100, (subscription.generationsToday / subscription.dailyLimit) * 100)
+      : 0
+
+  const dailyRemaining = Math.max(0, subscription.dailyLimit - subscription.generationsToday)
+  const periodRemaining = Math.max(0, subscription.periodLimit - subscription.generationsThisPeriod)
+  const isNearDailyLimit = dailyRemaining <= 1 && subscription.dailyLimit > 1
+  const isAtDailyLimit = dailyRemaining === 0
+  const isUnlimited = subscription.periodLimit >= 9999
+
+  return (
+    <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <Gauge size={16} className="text-[#126e3d]" />
+          <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Generation Usage</h3>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-[10px] font-black text-[#126e3d] uppercase">
+            <Crown size={9} /> {subscription.tier} Plan
+          </span>
+        </div>
+        {(isNearDailyLimit || isAtDailyLimit) && subscription.tier !== 'yearly' && (
+          <Link
+            href="/dashboard/user/subscription"
+            className="inline-flex items-center gap-1 text-xs font-black text-[#f97316] hover:underline"
+          >
+            <TrendingUp size={11} /> Upgrade for more
+          </Link>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-bold text-slate-600">Today</span>
+            <span className={`text-xs font-black ${isAtDailyLimit ? 'text-red-600' : isNearDailyLimit ? 'text-amber-600' : 'text-slate-700'}`}>
+              {subscription.generationsToday} / {subscription.dailyLimit === 999 ? '∞' : subscription.dailyLimit}
+            </span>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all rounded-full ${isAtDailyLimit ? 'bg-red-500' : isNearDailyLimit ? 'bg-amber-500' : 'bg-gradient-to-r from-[#32CD32] to-[#1A5C3A]'}`}
+              style={{ width: subscription.dailyLimit === 999 ? '5%' : `${dailyUsagePercent}%` }}
+            />
+          </div>
+          <p className="mt-1.5 text-[10px] text-slate-500">
+            {subscription.dailyLimit === 999
+              ? 'Unlimited generations today'
+              : dailyRemaining > 0
+                ? `${dailyRemaining} more generation${dailyRemaining === 1 ? '' : 's'} today`
+                : 'Daily limit reached — resets at midnight'}
+          </p>
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-bold text-slate-600">
+              This {subscription.tier === 'daily' ? 'day' : subscription.tier === 'weekly' ? 'week' : subscription.tier === 'monthly' ? 'month' : 'year'}
+            </span>
+            <span className="text-xs font-black text-slate-700">
+              {subscription.generationsThisPeriod} / {isUnlimited ? '∞' : subscription.periodLimit}
+            </span>
+          </div>
+          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-500 transition-all rounded-full"
+              style={{
+                width: isUnlimited ? '5%' : `${Math.min(100, (subscription.generationsThisPeriod / subscription.periodLimit) * 100)}%`,
+              }}
+            />
+          </div>
+          <p className="mt-1.5 text-[10px] text-slate-500">
+            {isUnlimited ? 'Unlimited generations' : `${periodRemaining} remaining this period`}
+          </p>
+        </div>
+      </div>
+
+      {subscription.daysRemaining > 0 && subscription.daysRemaining <= 3 && (
+        <div className="mt-4 flex items-center gap-2 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+          <AlertCircle size={14} className="text-amber-600 flex-shrink-0" />
+          <p className="text-xs text-amber-800 font-semibold">
+            Your plan expires in {subscription.daysRemaining} day{subscription.daysRemaining === 1 ? '' : 's'}.
+            <Link href="/dashboard/user/subscription" className="ml-1 underline font-black">
+              Renew now
+            </Link>
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main Component ───────────────────────────────────────────
 export default function MealGeneratorClient({ initialData }: { initialData: MealGeneratorData }) {
+  const router = useRouter()
+  const [subscription, setSubscription] = useState<SubscriptionInfo>(initialData.subscription)
+
+  // 🆕 Gate non-subscribers entirely
+  if (!subscription.isActive || !subscription.isPremium) {
+    return <SubscriptionGate subscription={subscription} />
+  }
+
   const [mode, setMode] = useState<'ai' | 'manual'>('ai')
   const [days, setDays] = useState(initialData.preferences?.days ? clampDays(initialData.preferences.days) : 7)
   const [diet, setDiet] = useState<DietaryPreference>(initialData.preferences?.diet || 'balanced')
@@ -124,16 +331,21 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
   const [allergies, setAllergies] = useState(initialData.preferences?.allergies?.join(', ') || '')
   const [budget, setBudget] = useState(initialData.preferences?.budget ? String(initialData.preferences.budget) : '')
   const [caloriesPerDay, setCaloriesPerDay] = useState(initialData.preferences?.caloriesPerDay ? String(initialData.preferences.caloriesPerDay) : '')
-  
+
   const [isGenerating, setIsGenerating] = useState(false)
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedPlan | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [infoMessage, setInfoMessage] = useState<string | null>(null)
-  
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false)
+
   const [availableMeals] = useState<MealOption[]>(initialData.meals)
   const [manualSelections, setManualSelections] = useState<ManualDaySelection[]>([])
   const [isPremiumUser] = useState(initialData.isPremium)
   const [isPending, startTransition] = useTransition()
+
+  // 🆕 Rate limit calculations
+  const dailyRemaining = Math.max(0, subscription.dailyLimit - subscription.generationsToday)
+  const isAtDailyLimit = dailyRemaining === 0
 
   useEffect(() => {
     if (infoMessage) {
@@ -227,8 +439,15 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
 
   const handleGenerate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setError(null); setInfoMessage(null)
-    
+    setError(null); setInfoMessage(null); setShowUpgradePrompt(false)
+
+    // 🆕 Client-side rate limit check (server enforces too)
+    if (isAtDailyLimit) {
+      setError(`You've reached your daily limit of ${subscription.dailyLimit} meal plan${subscription.dailyLimit === 1 ? '' : 's'}. Try again tomorrow or upgrade for higher limits.`)
+      setShowUpgradePrompt(true)
+      return
+    }
+
     startTransition(async () => {
       setIsGenerating(true)
       try {
@@ -238,8 +457,26 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
           setGeneratedPlan(adaptPlanToDays(buildManualPlan(selections), days))
           setInfoMessage('Manual meal plan created successfully.')
         } else {
-          const response = await fetch('/api/meal-plan/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preferences: preferencePayload, isPremium: isPremiumUser }) })
+          const response = await fetch('/api/meal-plan/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ preferences: preferencePayload, isPremium: isPremiumUser }),
+          })
           const result = await response.json()
+
+          // 🆕 Handle subscription/rate limit errors from API
+          if (response.status === 402 || result.reason === 'subscription_required') {
+            setError(result.error || 'A subscription is required to generate AI meal plans.')
+            setShowUpgradePrompt(true)
+            setTimeout(() => router.push('/dashboard/user/subscription'), 4000)
+            return
+          }
+          if (response.status === 429 || result.reason === 'rate_limit') {
+            setError(result.error || 'Rate limit reached. Try again later or upgrade for more.')
+            setShowUpgradePrompt(true)
+            return
+          }
+
           if (!response.ok || !result.success || !result.data) throw new Error(result.error || 'Failed to generate meal plan')
           setGeneratedPlan(adaptPlanToDays({ title: result.data.title, description: result.data.description, days: result.data.days, source: result.source ?? 'ai' }, days))
           setInfoMessage(result.source === 'fallback' ? 'Generated using your database meal library.' : 'AI meal plan generated successfully.')
@@ -252,7 +489,7 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
   const handleSavePlan = () => { if (!generatedPlan) return; try { localStorage.setItem('pikaplan:last-meal-plan', JSON.stringify(generatedPlan)); setInfoMessage('Meal plan saved to your browser.') } catch { setError('Could not save this plan.') } }
   const handleCopySummary = async () => { if (!generatedPlan) return; try { await navigator.clipboard.writeText(`PikaPlan Meal Plan\nTitle: ${generatedPlan.title}\nDays: ${generatedPlan.days.length}\nDiet: ${diet}\nServings: ${servings}\nCalories: ${planStats?.estimatedCalories ?? 'N/A'}`); setInfoMessage('Summary copied.') } catch { setError('Could not copy.') } }
   const handleSharePlan = async () => { if (!generatedPlan) return; try { if (navigator.share) await navigator.share({ title: generatedPlan.title, text: `PikaPlan: ${generatedPlan.title}` }); else { await navigator.clipboard.writeText(generatedPlan.title); setInfoMessage('Copied.') } } catch { setError('Could not share.') } }
-  const handleReset = () => { setGeneratedPlan(null); setError(null); setInfoMessage(null) }
+  const handleReset = () => { setGeneratedPlan(null); setError(null); setInfoMessage(null); setShowUpgradePrompt(false) }
 
   const sourceLabel = generatedPlan?.source ?? (mode === 'manual' ? 'manual' : 'ai')
   const sourceMeta: Record<'ai' | 'fallback' | 'manual', { label: string; icon: ComponentType<{ size?: number; className?: string }>; className: string }> = {
@@ -261,7 +498,7 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
     manual: { label: 'Manual Builder', icon: PencilLine, className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   }
   const SourceIcon = sourceMeta[sourceLabel].icon
-  const submitDisabled = isGenerating || isPending || (mode === 'manual' && !hasMeals)
+  const submitDisabled = isGenerating || isPending || (mode === 'manual' && !hasMeals) || (mode === 'ai' && isAtDailyLimit)
 
   return (
     <>
@@ -276,14 +513,34 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 backdrop-blur-sm"><CalendarDays size={14} className="text-[#32CD32]" />3 / 5 / 7 / 14 Day Plans</span>
               <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 backdrop-blur-sm"><ListChecks size={14} className="text-[#32CD32]" />Shopping List Included</span>
-              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white/90 backdrop-blur-sm">{isPremiumUser ? <><Crown size={14} className="text-[#F4A535]" />AI Chef Pro Active</> : <><Sparkles size={14} className="text-[#F4A535]" />AI Chef Ready</>}</span>
+              <span className="inline-flex items-center gap-2 rounded-full bg-[#F4A535]/20 backdrop-blur px-4 py-2 text-sm font-semibold text-white"><Crown size={14} className="text-[#F4A535]" />{subscription.tier} Plan Active</span>
             </div>
           </div>
         </section>
 
         <section className="-mt-8 px-6 py-12 lg:py-16">
           <div className="mx-auto max-w-6xl">
-            {error && <div className="mb-6 flex items-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"><ShieldCheck size={16} /> {error}</div>}
+            {/* 🆕 Usage Meter */}
+            <UsageMeter subscription={subscription} />
+
+            {error && (
+              <div className="mb-6 flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                <ShieldCheck size={16} className="mt-0.5 flex-shrink-0" />
+                <div className="flex-1">
+                  <span>{error}</span>
+                  {showUpgradePrompt && (
+                    <div className="mt-2">
+                      <Link
+                        href="/dashboard/user/subscription"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 hover:bg-red-700 px-3 py-1.5 text-xs font-black uppercase text-white transition"
+                      >
+                        <ArrowRight size={11} /> Upgrade Now
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             {infoMessage && <div className="mb-6 flex items-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"><CheckCircle2 size={16} /> {infoMessage}</div>}
 
             {!generatedPlan ? (
@@ -315,7 +572,7 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
                           <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-100"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Budget</p><p className="mt-1 text-sm font-bold text-slate-900">{budget ? `KES ${Number(budget).toLocaleString('en-KE')}` : 'Optional'}</p></div>
                           <div className="rounded-2xl bg-white p-4 ring-1 ring-slate-100"><p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Calories</p><p className="mt-1 text-sm font-bold text-slate-900">{caloriesPerDay ? `${Number(caloriesPerDay).toLocaleString('en-KE')} / day` : 'Optional'}</p></div>
                         </div>
-                        {isPremiumUser ? <div className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700"><Crown size={15} />Premium AI Chef enabled</div> : <Link href="/pricing" className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100"><Crown size={15} />Unlock GPT-4.1 AI Chef</Link>}
+                        <div className="mt-4 inline-flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700"><Crown size={15} />{subscription.tier} Plan Active</div>
                       </div>
                       <div><label className="mb-2 block text-sm font-semibold text-slate-700">Dislikes</label><input value={dislikes} onChange={(e) => setDislikes(e.target.value)} placeholder="e.g. mushrooms, liver" className="w-full rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#32CD32] focus:outline-none focus:ring-2 focus:ring-[#32CD32]" /></div>
                       <div><label className="mb-2 block text-sm font-semibold text-slate-700">Allergies</label><input value={allergies} onChange={(e) => setAllergies(e.target.value)} placeholder="e.g. nuts, dairy" className="w-full rounded-2xl border-2 border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-[#32CD32] focus:outline-none focus:ring-2 focus:ring-[#32CD32]" /></div>
@@ -366,8 +623,12 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
 
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <button type="submit" disabled={submitDisabled} className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#32CD32] to-[#1A5C3A] px-5 py-4 text-lg font-bold text-white shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70">
-                      {isGenerating || isPending ? <><Loader2 className="h-5 w-5 animate-spin" />Generating...</> : mode === 'ai' ? <><WandSparkles className="h-5 w-5" />Generate with AI</> : !hasMeals ? <><ShieldCheck className="h-5 w-5" />Meals Not Ready</> : <><PencilLine className="h-5 w-5" />Build Manual Plan</>}
-                      {!isGenerating && !isPending && <ArrowRight className="h-5 w-5" />}
+                      {isGenerating || isPending ? <><Loader2 className="h-5 w-5 animate-spin" />Generating...</> :
+                       mode === 'ai' && isAtDailyLimit ? <><Lock className="h-5 w-5" />Daily Limit Reached</> :
+                       mode === 'ai' ? <><WandSparkles className="h-5 w-5" />Generate with AI</> :
+                       !hasMeals ? <><ShieldCheck className="h-5 w-5" />Meals Not Ready</> :
+                       <><PencilLine className="h-5 w-5" />Build Manual Plan</>}
+                      {!isGenerating && !isPending && !isAtDailyLimit && <ArrowRight className="h-5 w-5" />}
                     </button>
                     <button type="button" onClick={handleReset} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-lg font-semibold text-slate-700 transition hover:bg-slate-50"><RefreshCw className="h-5 w-5" />Clear Result</button>
                   </div>

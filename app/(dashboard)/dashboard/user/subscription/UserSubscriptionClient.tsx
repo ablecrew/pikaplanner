@@ -29,7 +29,7 @@ type SubscriptionPlan = {
 
 const MEAL_PLANS: SubscriptionPlan[] = [
   {
-    tier: 'daily', display_name: 'Daily', price_kes: 14, duration_days: 1, popular: false,
+    tier: 'daily', display_name: 'Daily', price_kes: 17, duration_days: 1, popular: false,
     features: [
       'AI meal suggestions for the day',
       'Smart shopping list generation',
@@ -39,7 +39,7 @@ const MEAL_PLANS: SubscriptionPlan[] = [
     ],
   },
   {
-    tier: 'weekly', display_name: 'Weekly', price_kes: 50, duration_days: 7, popular: true,
+    tier: 'weekly', display_name: 'Weekly', price_kes: 55, duration_days: 7, popular: true,
     features: [
       'Everything in Daily, plus:',
       'Full 7-day weekly menu plan',

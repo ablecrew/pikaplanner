@@ -34,10 +34,34 @@ export type SavedMealPreferences = {
   days?: number
 }
 
+// Subscription info shared with client
+export type SubscriptionInfo = {
+  isActive: boolean
+  isPremium: boolean
+  tier: string | null
+  expiresAt: string | null
+  daysRemaining: number
+  generationsToday: number
+  generationsThisPeriod: number
+  dailyLimit: number
+  periodLimit: number
+  canGenerate: boolean
+}
+
 export type MealGeneratorData = {
   meals: MealOption[]
   preferences: SavedMealPreferences | null
   isPremium: boolean
+  subscription: SubscriptionInfo
+}
+
+// Tier-based rate limits
+const TIER_LIMITS: Record<string, { perDay: number; perPeriod: number; periodDays: number }> = {
+  daily:   { perDay: 1,   perPeriod: 1,    periodDays: 1 },
+  weekly:  { perDay: 3,   perPeriod: 10,   periodDays: 7 },
+  monthly: { perDay: 5,   perPeriod: 50,   periodDays: 30 },
+  yearly:  { perDay: 999, perPeriod: 9999, periodDays: 365 },
+  free:    { perDay: 0,   perPeriod: 0,    periodDays: 1 },
 }
 
 // ── Server-Side Normalization Helpers ─────────────────────
@@ -103,17 +127,94 @@ function dedupeMeals(meals: MealOption[]) {
   })
 }
 
+// ── Subscription Helper ─────────────────────────────────
+export async function getSubscriptionInfo(userId: string): Promise<SubscriptionInfo> {
+  const supabase = await createClient()
+
+  const { data: sub } = await supabase
+    .from('subscriptions')
+    .select('id, tier, status, expires_at')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .gte('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const tier = sub?.tier ?? null
+  const isActive = !!sub
+  const isPremium = isActive && tier !== 'free' && tier !== null
+
+  const limits = TIER_LIMITS[tier ?? 'free'] ?? TIER_LIMITS.free
+
+  // Count today's AI-generated plans
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+
+  const { count: dayCount } = await supabase
+    .from('meal_plans')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('is_ai_generated', true)
+    .gte('created_at', todayStart.toISOString())
+
+  const periodStart = new Date()
+  periodStart.setDate(periodStart.getDate() - limits.periodDays)
+
+  const { count: periodCount } = await supabase
+    .from('meal_plans')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('is_ai_generated', true)
+    .gte('created_at', periodStart.toISOString())
+
+  const generationsToday = dayCount ?? 0
+  const generationsThisPeriod = periodCount ?? 0
+
+  const daysRemaining = sub?.expires_at
+    ? Math.max(
+        0,
+        Math.ceil((new Date(sub.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      )
+    : 0
+
+  const canGenerate =
+    isPremium &&
+    generationsToday < limits.perDay &&
+    generationsThisPeriod < limits.perPeriod
+
+  return {
+    isActive,
+    isPremium,
+    tier,
+    expiresAt: sub?.expires_at ?? null,
+    daysRemaining,
+    generationsToday,
+    generationsThisPeriod,
+    dailyLimit: limits.perDay,
+    periodLimit: limits.perPeriod,
+    canGenerate,
+  }
+}
+
 // ── Main Data Fetching ────────────────────────────────────
 export async function fetchMealGeneratorData(): Promise<MealGeneratorData> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) return { meals: [], preferences: null, isPremium: false }
+
+  const emptySub: SubscriptionInfo = {
+    isActive: false, isPremium: false, tier: null, expiresAt: null,
+    daysRemaining: 0, generationsToday: 0, generationsThisPeriod: 0,
+    dailyLimit: 0, periodLimit: 0, canGenerate: false,
+  }
+
+  if (!user) return { meals: [], preferences: null, isPremium: false, subscription: emptySub }
 
   // PARALLEL FETCHING (Massive speedup)
-  const [profileRes, mealsRes] = await Promise.all([
+  const [profileRes, mealsRes, subInfo] = await Promise.all([
     supabase.from('profiles').select('meal_preferences, subscription_tier, dietary_preferences, cuisine_preferences, budget_range, household_size').eq('id', user.id).maybeSingle(),
-    supabase.from('meals').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(120)
+    supabase.from('meals').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(120),
+    getSubscriptionInfo(user.id), 
   ])
 
   const profile = profileRes.data as any
@@ -126,7 +227,6 @@ export async function fetchMealGeneratorData(): Promise<MealGeneratorData> {
     try { prefs = JSON.parse(rawPrefs) as SavedMealPreferences } catch {}
   }
 
-  // Fallback to root profile fields if meal_preferences is empty
   if (!prefs) {
     prefs = {
       diet: profile?.dietary_preferences?.[0] as DietaryPreference,
@@ -137,11 +237,13 @@ export async function fetchMealGeneratorData(): Promise<MealGeneratorData> {
   }
 
   const dbMeals = (mealsRes.data ?? []).map((row: Record<string, unknown>) => normalizeMealRecord(row))
-  const isPremium = profile?.subscription_tier === 'premium'
+  // Treat any active subscription as "premium" for feature unlocks
+  const isPremium = subInfo.isPremium
 
   return {
     meals: dedupeMeals(dbMeals),
     preferences: prefs,
     isPremium,
+    subscription: subInfo,
   }
 }

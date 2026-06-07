@@ -15,7 +15,7 @@ const formatMoney = (v: number) => `KES ${v.toLocaleString('en-KE')}`
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
-// 🆕 Helper type + function — TypeScript-proof
+//  Helper type + function — TypeScript-proof
 type ToastMessage = { type: 'success' | 'error'; text: string }
 
 type Props = {
@@ -35,7 +35,7 @@ export default function ManageSubscription({
   const [message, setMessage] = useState<ToastMessage | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  // 🆕 Helper — always returns a string, never undefined
+  // Helper — always returns a string, never undefined
   const showMessage = (
     type: 'success' | 'error',
     text: string | undefined | null,
