@@ -10,18 +10,21 @@ export default async function UserSubscriptionPage() {
 
   let initialProfile = null
   let initialSubscription = null
+  let initialRenewals: any[] = []
 
   if (user) {
     const data = await fetchSubscriptionData(user.id)
     initialProfile = data.profile
     initialSubscription = data.subscription
+    initialRenewals = data.renewalHistory
   }
 
   return (
-    <UserSubscriptionClient 
-      initialProfile={initialProfile} 
-      initialSubscription={initialSubscription} 
-      userId={user?.id || ''} 
+    <UserSubscriptionClient
+      initialProfile={initialProfile}
+      initialSubscription={initialSubscription}
+      initialRenewals={initialRenewals}
+      userId={user?.id || ''}
     />
   )
 }
