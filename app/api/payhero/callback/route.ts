@@ -278,9 +278,16 @@ async function handleSuccessfulPayment(supabase: any, txn: any) {
       break
     }
 
-    case 'shopping_cart':
-      // (your business logic)
-      break
+    case 'shopping_cart': {
+     if (!txn.related_id) break
+  // Mark all items in the shopping list as paid (we delete them in clearPaidItemsAction)
+  // Or you could mark them with a status flag here if you want history
+    console.log('[Payhero] Shopping cart paid:', txn.related_id)
+
+  // Optional: Create an order record for tracking
+  // await supabase.from('orders').insert({ ... })
+    break
+  }
 
     default:
       console.log('[Payhero] No handler for purpose:', txn.purpose)

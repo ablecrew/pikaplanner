@@ -6,14 +6,14 @@ import Footer from '@/components/footer/Footer'
 const plans = [
   { 
     name: "Daily", 
-    price: "14 KES", 
+    price: "17 KES", 
     frequency: "daily",
     popular: false,
     gradient: "from-slate-600 to-slate-800",
   },
   { 
     name: "Weekly", 
-    price: "99 KES", 
+    price: "55 KES", 
     frequency: "weekly",
     popular: true,
     gradient: "from-[#32CD32] to-[#1A5C3A]",
