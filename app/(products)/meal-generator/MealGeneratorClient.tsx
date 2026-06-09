@@ -124,8 +124,8 @@ const GATE_FEATURES = [
 ]
 
 const GATE_PLANS = [
-  { tier: 'daily',   label: 'Daily',   price: 14,    duration: 'per day',   popular: false },
-  { tier: 'weekly',  label: 'Weekly',  price: 50,    duration: 'per week',  popular: true },
+  { tier: 'daily',   label: 'Daily',   price: 17,    duration: 'per day',   popular: false },
+  { tier: 'weekly',  label: 'Weekly',  price: 55,    duration: 'per week',  popular: true },
   { tier: 'monthly', label: 'Monthly', price: 199,   duration: 'per month', popular: false },
   { tier: 'yearly',  label: 'Yearly',  price: 2200,  duration: 'per year',  popular: false },
 ]
