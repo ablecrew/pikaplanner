@@ -158,7 +158,7 @@ function SubscriptionGate({ subscription }: { subscription: SubscriptionInfo }) 
               className="inline-flex items-center gap-2 rounded-2xl bg-[#f97316] hover:bg-[#ea580c] px-7 py-4 text-sm font-black uppercase text-white shadow-lg hover:shadow-xl transition hover:-translate-y-0.5"
             >
               <Sparkles size={16} />
-              {isExpired ? 'Renew Subscription' : 'Start From KES 14/day'}
+              {isExpired ? 'Renew Subscription' : 'Start From KES 17/day'}
               <ArrowRight size={16} />
             </Link>
           </div>
@@ -481,7 +481,7 @@ export default function MealGeneratorClient({ initialData }: { initialData: Meal
           setGeneratedPlan(adaptPlanToDays({ title: result.data.title, description: result.data.description, days: result.data.days, source: result.source ?? 'ai' }, days))
           setInfoMessage(result.source === 'fallback' ? 'Generated using your database meal library.' : 'AI meal plan generated successfully.')
         }
-        window.setTimeout(() => document.getElementById('meal-plan-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+        window.setTimeout(() => document.getElementById('meal-plan-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 55)
       } catch (err: any) { setError(err.message) } finally { setIsGenerating(false) }
     })
   }
