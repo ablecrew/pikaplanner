@@ -114,7 +114,7 @@ export const FACTS: CompanyFact[] = [
 ]
 
 // ── Founders / Leadership ─────────────────────────────────
-export const FOUNDERS: Founder[] = [
+{/*export const FOUNDERS: Founder[] = [
   {
     name: 'Brian Ontita',
     role: 'Founder & CEO',
@@ -153,7 +153,7 @@ export const FOUNDERS: Founder[] = [
     linkedinUrl: 'https://linkedin.com/in/gracemwende',
     email: 'grace@pikaplan.com',
   },
-]
+]*/}
 
 // ── Company Milestones ────────────────────────────────────
 export const MILESTONES: Milestone[] = [
@@ -161,7 +161,7 @@ export const MILESTONES: Milestone[] = [
     year: '2026',
     month: 'March',
     title: 'Pika Plan founded',
-    description: 'Brian Ontita and Teddy Dande co-found the company in Nairobi.',
+    description: 'The company was founded in Nairobi.',
     type: 'launch',
   },
   {
@@ -368,8 +368,8 @@ export const AWARDS = [
 
 // ── Press Contact ─────────────────────────────────────────
 export const PRESS_CONTACT = {
-  name: 'Brian Ontita',
-  role: 'CEO & Founder',
+  //name: 'Brian Ontita',
+  //role: 'CEO & Founder',
   email: 'press@pikaplan.com',
   phone: '+254 797 846 624',
   responseTime: 'Within 24 hours on weekdays',

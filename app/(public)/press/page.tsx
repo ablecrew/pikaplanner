@@ -12,7 +12,7 @@ import {
 import { FaLinkedin, FaTwitter } from 'react-icons/fa';
 import CopyButton from './CopyButton'
 import {
-  COMPANY, BOILERPLATE, FACTS, FOUNDERS, MILESTONES,
+  COMPANY, BOILERPLATE, FACTS, MILESTONES,
   MEDIA_COVERAGE, ASSETS, BRAND_COLORS, AWARDS, PRESS_CONTACT,
 } from './_data/press'
 
@@ -91,11 +91,11 @@ export default function PressPage() {
       email: PRESS_CONTACT.email,
       telephone: PRESS_CONTACT.phone,
     },
-    founder: FOUNDERS.map((f) => ({
-      '@type': 'Person',
-      name: f.name,
-      jobTitle: f.role,
-    })),
+    //founder: FOUNDERS.map((f) => ({
+      //'@type': 'Person',
+      //name: f.name,
+      //jobTitle: f.role,
+    //})),
   }
 
   return (
@@ -235,11 +235,11 @@ export default function PressPage() {
               subtitle="Founders and key executives available for interviews and quotes."
             />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {FOUNDERS.map((founder) => (
+            {/*<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              //{FOUNDERS.map((founder) => (
                 <FounderCard key={founder.name} founder={founder} />
               ))}
-            </div>
+            </div>*/}
           </section>
 
           {/* ── MILESTONES TIMELINE ───────────────────── */}
@@ -456,8 +456,8 @@ export default function PressPage() {
                     <p className="text-xs font-black uppercase tracking-widest text-[#32CD32] mb-1">
                       Direct Contact
                     </p>
-                    <p className="font-black text-white">{PRESS_CONTACT.name}</p>
-                    <p className="text-sm text-white/70">{PRESS_CONTACT.role}</p>
+                    {/*<p className="font-black text-white">{PRESS_CONTACT.name}</p>
+                    <p className="text-sm text-white/70">{PRESS_CONTACT.role}</p>*/}
                   </div>
 
                   <div className="space-y-2">
