@@ -1,9 +1,8 @@
-
 {
-  "crons": [
-    {
-      "path": "/api/cron/check-stuck-payments",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
+    "crons": [
+      {
+        "path": "/api/cron/check-stuck-payments",
+        "schedule": "0 3 * * *"
+      }
+    ]
+  }
