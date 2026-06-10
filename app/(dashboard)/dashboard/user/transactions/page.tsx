@@ -9,14 +9,18 @@ export default async function UserTransactionsPage({
   searchParams: Promise<{
     search?: string
     status?: string
+    type?: string
     page?: string
   }>
 }) {
   const params = await searchParams
+
   const initial = await fetchUserTransactions({
     search: params?.search,
     status: params?.status as any,
+    type: params?.type as any,
     page: Number(params?.page) || 1,
   })
+
   return <UserTransactionsClient initialData={initial} />
 }

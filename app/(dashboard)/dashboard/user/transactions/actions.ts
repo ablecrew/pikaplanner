@@ -2,34 +2,61 @@
 
 import { createClient } from '@/lib/supabase/server'
 
-export type TransactionStatus = 'Successful' | 'Pending' | 'Failed' | 'Refunded'
+// ── Types ──────────────────────────────────────────────
+
+export type TransactionType = 'subscription' | 'meal_order' | 'shopping_cart' | 'vendor_subscription'
+
+export type TransactionStatus = 'Successful' | 'Processing' | 'Failed' | 'Cancelled'
 
 export type TransactionRecord = {
+  // Core transaction data
   id: string
-  orderId: string
-  orderNumber: string
-  vendorId: string
-  vendorName: string
+  internalReference: string
+  externalReference: string
+  mpesaReceipt: string
   amount: number
+  currency: string
   method: 'M-Pesa' | 'Card' | 'Bank'
-  date: string
   status: TransactionStatus
-  mpesaCode: string
-  subtotal: number
-  deliveryFee: number
-  platformFee: number
-  deliveryAddress: string
-  customerNotes: string
+  statusMessage: string
+  type: TransactionType
+  typeLabel: string
+  typeBadge: { bg: string; text: string; icon: string }
+
+  // Dates
+  initiatedAt: string
+  completedAt: string | null
+  expiresAt: string | null
+
+  // Enrichment: Subscription
+  subscriptionId: string | null
+  subscriptionTier: string | null
+  subscriptionTierLabel: string | null
+  subscriptionDuration: string | null
+  subscriptionExpiresAt: string | null
+  autoRenew: boolean
+
+  // Enrichment: Order
+  orderId: string | null
+  orderNumber: string | null
+  vendorName: string | null
+  itemCount: number | null
+  deliveryAddress: string | null
+  deliveryStatus: string | null
+
+  // Enrichment: Shopping
+  shoppingListId: string | null
+  shoppingListName: string | null
+  shoppingItemCount: number | null
 }
 
 export type TransactionStats = {
-  spent: number
-  pending: number
-  refunded: number
+  totalSpent: number
   successfulCount: number
-  pendingCount: number
-  refundedCount: number
+  processingCount: number
   failedCount: number
+  cancelledCount: number
+  activeSubscriptions: number
 }
 
 export type TransactionsPayload = {
@@ -39,156 +66,354 @@ export type TransactionsPayload = {
   page: number
   pageSize: number
   totalPages: number
-  debug?: {
-    ordersFound: number
-  }
 }
 
 export type TransactionsQuery = {
   search: string
   status: TransactionStatus | 'All'
+  type: TransactionType | 'All'
   page: number
 }
 
-const PAGE_SIZE = 20
-const CACHE_TTL = 30
+// ── Constants ──────────────────────────────────────────
 
-const STATUS_VALUES: TransactionStatus[] = ['Successful', 'Pending', 'Failed', 'Refunded']
+const PAGE_SIZE = 15
+
+const TYPE_LABELS: Record<TransactionType, string> = {
+  subscription: 'Subscription',
+  meal_order: 'Meal Order',
+  shopping_cart: 'Shopping Cart',
+  vendor_subscription: 'Vendor Plan',
+}
+
+const TYPE_BADGES: Record<TransactionType, { bg: string; text: string; icon: string }> = {
+  subscription: { bg: 'bg-violet-100', text: 'text-violet-700', icon: 'Sparkles' },
+  meal_order: { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: 'UtensilsCrossed' },
+  shopping_cart: { bg: 'bg-sky-100', text: 'text-sky-700', icon: 'ShoppingBag' },
+  vendor_subscription: { bg: 'bg-amber-100', text: 'text-amber-700', icon: 'Store' },
+}
+
+const TIER_LABELS: Record<string, string> = {
+  daily: 'Daily Plan',
+  weekly: 'Weekly Plan',
+  monthly: 'Monthly Plan',
+  yearly: 'Yearly Plan',
+  free: 'Free Trial',
+}
+
+// ── Helpers ────────────────────────────────────────────
+
+function deriveStatus(txn: any): TransactionStatus {
+  if (txn.status === 'success') return 'Successful'
+  if (txn.status === 'cancelled') return 'Cancelled'
+  if (txn.status === 'failed') return 'Failed'
+  return 'Processing'
+}
 
 function sanitize(input: unknown, fallback: string): string {
   if (typeof input !== 'string') return fallback
   return input.trim()
 }
 
-function isStatus(value: unknown): value is TransactionStatus {
-  return typeof value === 'string' && STATUS_VALUES.includes(value as TransactionStatus)
+function isTransactionStatus(value: unknown): value is TransactionStatus {
+  return ['Successful', 'Processing', 'Failed', 'Cancelled'].includes(value as string)
 }
 
-function deriveStatus(o: any): TransactionStatus {
-  if (o.payment_status === 'paid') return 'Successful'
-  if (o.payment_status === 'refunded' || o.status === 'Refunded') return 'Refunded'
-  if (o.payment_status === 'failed') return 'Failed'
-  return 'Pending'
+function isTransactionType(value: unknown): value is TransactionType {
+  return ['subscription', 'meal_order', 'shopping_cart', 'vendor_subscription'].includes(value as string)
 }
 
-function mapOrderToTransaction(
-  o: any,
-  vendorMap: Map<string, string>
+function formatDuration(days: number): string {
+  if (days === 1) return '1 day'
+  if (days < 7) return `${days} days`
+  if (days === 7) return '1 week'
+  if (days < 30) return `${Math.round(days / 7)} weeks`
+  if (days === 30) return '1 month'
+  if (days < 365) return `${Math.round(days / 30)} months`
+  return '1 year'
+}
+
+// ── Map raw transaction to display record ──────────────
+
+function mapTransaction(
+  txn: any,
+  enrichment: {
+    subscription?: any
+    order?: any
+    orderItems?: any[]
+    vendor?: any
+    shoppingList?: any
+  }
 ): TransactionRecord {
-  const vendorName = vendorMap.get(o.vendor_id) || 'Pika Kitchen'
-  const method: 'M-Pesa' | 'Card' | 'Bank' = o.mpesa_transaction_id
-    ? 'M-Pesa'
-    : 'Card'
+  const status = deriveStatus(txn)
+  const meta = txn.metadata ?? {}
+  const purpose = txn.purpose ?? 'meal_order'
+
+  // Determine type
+  let type: TransactionType = 'meal_order'
+  if (purpose === 'subscription') type = 'subscription'
+  else if (purpose === 'vendor_subscription') type = 'vendor_subscription'
+  else if (purpose === 'shopping_cart') type = 'shopping_cart'
+  else if (purpose === 'meal_order') type = 'meal_order'
+
+  // Determine payment method
+  let method: 'M-Pesa' | 'Card' | 'Bank' = 'M-Pesa'
+  if (txn.channel === 'card') method = 'Card'
+  else if (txn.channel === 'bank') method = 'Bank'
+
+  // Subscription enrichment
+  const sub = enrichment.subscription
+  const tier = sub?.tier ?? meta.tier ?? null
+  const durationDays = meta.durationDays ?? (tier === 'daily' ? 1 : tier === 'weekly' ? 7 : tier === 'monthly' ? 30 : tier === 'yearly' ? 365 : null)
+
+  // Order enrichment
+  const order = enrichment.order
+  const vendor = enrichment.vendor
+  const orderItems = enrichment.orderItems ?? []
+
+  // Shopping enrichment
+  const shopList = enrichment.shoppingList
 
   return {
-    id: `TXN-${(o.id || '').slice(0, 8).toUpperCase()}`,
-    orderId: o.id,
-    orderNumber: o.order_number || (o.id || '').slice(0, 8).toUpperCase(),
-    vendorId: o.vendor_id || '',
-    vendorName,
-    amount: Number(o.total_amount || 0),
+    id: `TXN-${(txn.id || '').slice(0, 8).toUpperCase()}`,
+    internalReference: txn.reference || '',
+    externalReference: txn.payhero_reference || '',
+    mpesaReceipt: txn.mpesa_receipt || '',
+    amount: Number(txn.amount || 0),
+    currency: txn.currency || 'KES',
     method,
-    date: o.created_at,
-    status: deriveStatus(o),
-    mpesaCode: o.mpesa_transaction_id || '',
-    subtotal: Number(o.subtotal || 0),
-    deliveryFee: Number(o.delivery_fee || 0),
-    platformFee: Number(o.platform_fee || 0),
-    deliveryAddress: o.delivery_address || '',
-    customerNotes: o.customer_notes || '',
+    status,
+    statusMessage: txn.status_message || '',
+    type,
+    typeLabel: TYPE_LABELS[type],
+    typeBadge: TYPE_BADGES[type],
+
+    initiatedAt: txn.initiated_at || txn.created_at,
+    completedAt: txn.completed_at || null,
+    expiresAt: txn.expires_at || null,
+
+    // Subscription
+    subscriptionId: sub?.id ?? txn.related_id ?? null,
+    subscriptionTier: tier,
+    subscriptionTierLabel: tier ? (TIER_LABELS[tier] ?? tier) : null,
+    subscriptionDuration: durationDays ? formatDuration(durationDays) : null,
+    subscriptionExpiresAt: sub?.expires_at ?? null,
+    autoRenew: sub?.auto_renew ?? meta.billingType === 'auto-renew',
+
+    // Order
+    orderId: order?.id ?? (type === 'meal_order' ? txn.related_id : null),
+    orderNumber: order?.order_number ?? null,
+    vendorName: vendor?.business_name ?? order?.vendor_name ?? null,
+    itemCount: orderItems.length || null,
+    deliveryAddress: order?.delivery_address ?? null,
+    deliveryStatus: order?.status ?? null,
+
+    // Shopping
+    shoppingListId: shopList?.id ?? (type === 'shopping_cart' ? txn.related_id : null),
+    shoppingListName: shopList?.name ?? null,
+    shoppingItemCount: shopList?.item_count ?? meta.itemCount ?? null,
   }
 }
 
-function buildStats(rows: TransactionRecord[]): TransactionStats {
-  const successful = rows.filter((t) => t.status === 'Successful')
-  const pending = rows.filter((t) => t.status === 'Pending')
-  const refunded = rows.filter((t) => t.status === 'Refunded')
-  const failed = rows.filter((t) => t.status === 'Failed')
+// ── Build stats ────────────────────────────────────────
+
+function buildStats(transactions: TransactionRecord[]): TransactionStats {
+  let totalSpent = 0
+  let successfulCount = 0
+  let processingCount = 0
+  let failedCount = 0
+  let cancelledCount = 0
+  let activeSubscriptions = 0
+
+  for (const t of transactions) {
+    if (t.status === 'Successful') {
+      totalSpent += t.amount
+      successfulCount++
+    }
+    if (t.status === 'Processing') processingCount++
+    if (t.status === 'Failed') failedCount++
+    if (t.status === 'Cancelled') cancelledCount++
+    if (t.type === 'subscription' && t.subscriptionExpiresAt) {
+      if (new Date(t.subscriptionExpiresAt).getTime() > Date.now()) {
+        activeSubscriptions++
+      }
+    }
+  }
 
   return {
-    spent: successful.reduce((s, t) => s + t.amount, 0),
-    pending: pending.reduce((s, t) => s + t.amount, 0),
-    refunded: refunded.reduce((s, t) => s + t.amount, 0),
-    successfulCount: successful.length,
-    pendingCount: pending.length,
-    refundedCount: refunded.length,
-    failedCount: failed.length,
+    totalSpent,
+    successfulCount,
+    processingCount,
+    failedCount,
+    cancelledCount,
+    activeSubscriptions,
   }
 }
+
+// ── Empty payload ──────────────────────────────────────
+
+function emptyPayload(query: TransactionsQuery): TransactionsPayload {
+  return {
+    transactions: [],
+    stats: {
+      totalSpent: 0,
+      successfulCount: 0,
+      processingCount: 0,
+      failedCount: 0,
+      cancelledCount: 0,
+      activeSubscriptions: 0,
+    },
+    total: 0,
+    page: query.page,
+    pageSize: PAGE_SIZE,
+    totalPages: 0,
+  }
+}
+
+// ── Main fetch function ────────────────────────────────
 
 async function fetchTransactionsRaw(
-  query: TransactionsQuery,
+  query: TransactionsQuery
 ): Promise<TransactionsPayload> {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    return emptyPayload(query)
-  }
+  if (!user) return emptyPayload(query)
 
   const page = Math.max(1, Math.floor(query.page))
   const from = (page - 1) * PAGE_SIZE
   const to = from + PAGE_SIZE - 1
 
-  // Orders + total count in parallel
-  const [orderRes, countRes] = await Promise.all([
-    supabase
-      .from('orders')
-      .select(
-        'id, order_number, vendor_id, subtotal, total_amount, platform_fee, delivery_fee, status, payment_status, delivery_address, customer_notes, mpesa_transaction_id, created_at',
-      )
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .range(from, to),
-    supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', user.id),
-  ])
+  // 1. Fetch transactions (the source of truth)
+  const { data: txns, error: txnError, count } = await supabase
+    .from('transactions')
+    .select('*', { count: 'exact' })
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .range(from, to)
 
-  if (orderRes.error) {
-    console.error('orders fetch error:', orderRes.error)
+  if (txnError || !txns) {
+    console.error('[Transactions] Fetch error:', txnError)
     return emptyPayload(query)
   }
 
-  const orders = (orderRes.data || []) as any[]
+  // 2. Enrich in parallel — batch all IDs by type
+  const subscriptionIds = txns
+    .filter(t => t.purpose === 'subscription' && t.related_id)
+    .map(t => t.related_id)
+    .filter(Boolean)
 
-  // Bulk fetch vendors
-  const vendorIds = Array.from(
-    new Set(orders.map((o) => o.vendor_id).filter(Boolean) as string[]),
-  )
-  let vendorMap = new Map<string, string>()
+  const orderIds = txns
+    .filter(t => t.purpose === 'meal_order' && t.related_id)
+    .map(t => t.related_id)
+    .filter(Boolean)
+
+  const shoppingIds = txns
+    .filter(t => t.purpose === 'shopping_cart' && t.related_id)
+    .map(t => t.related_id)
+    .filter(Boolean)
+
+  // Fetch all enrichment data in parallel
+  const [subscriptionsRes, ordersRes, orderItemsRes, shoppingListsRes] = await Promise.all([
+    // Subscriptions
+    subscriptionIds.length > 0
+      ? supabase.from('subscriptions').select('*').in('id', subscriptionIds)
+      : Promise.resolve({ data: [] as any[] }),
+
+    // Orders
+    orderIds.length > 0
+      ? supabase.from('orders').select('id, order_number, vendor_id, vendor_name, delivery_address, status, created_at').in('id', orderIds)
+      : Promise.resolve({ data: [] as any[] }),
+
+    // Order items (if we have orders)
+    orderIds.length > 0
+      ? supabase.from('order_items').select('id, order_id, meal_id, quantity').in('order_id', orderIds)
+      : Promise.resolve({ data: [] as any[] }),
+
+    // Shopping lists
+    shoppingIds.length > 0
+      ? supabase.from('shopping_lists').select('id, name, item_count').in('id', shoppingIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ])
+
+  // 3. Build lookup maps
+  const subscriptionMap = new Map<string, any>()
+  for (const s of (subscriptionsRes.data ?? [])) {
+    subscriptionMap.set(s.id, s)
+  }
+
+  const orderMap = new Map<string, any>()
+  for (const o of (ordersRes.data ?? [])) {
+    orderMap.set(o.id, o)
+  }
+
+  // Group order items by order_id
+  const orderItemsMap = new Map<string, any[]>()
+  for (const item of (orderItemsRes.data ?? [])) {
+    const list = orderItemsMap.get(item.order_id) ?? []
+    list.push(item)
+    orderItemsMap.set(item.order_id, list)
+  }
+
+  const shoppingMap = new Map<string, any>()
+  for (const sl of (shoppingListsRes.data ?? [])) {
+    shoppingMap.set(sl.id, sl)
+  }
+
+  // 4. Fetch vendor names for orders
+  const vendorIds = Array.from(new Set(
+    (ordersRes.data ?? [])
+      .map((o: any) => o.vendor_id)
+      .filter(Boolean)
+  ))
+
+  const vendorMap = new Map<string, string>()
   if (vendorIds.length > 0) {
     const { data: vendors } = await supabase
       .from('vendors')
       .select('id, business_name')
       .in('id', vendorIds)
-    vendorMap = new Map(
-      ((vendors || []) as Array<{ id: string; business_name: string | null }>).map(
-        (v) => [v.id, v.business_name || 'Pika Kitchen'],
-      ),
+
+    for (const v of (vendors ?? []) as any[]) {
+      vendorMap.set(v.id, v.business_name || 'Pika Kitchen')
+    }
+  }
+
+  // 5. Map to display records
+  let transactions: TransactionRecord[] = txns.map(txn => {
+    const sub = subscriptionMap.get(txn.related_id)
+    const order = orderMap.get(txn.related_id)
+    const orderItems = orderItemsMap.get(txn.related_id) ?? []
+    const shopList = shoppingMap.get(txn.related_id)
+
+    return mapTransaction(txn, {
+      subscription: sub,
+      order,
+      orderItems,
+      vendor: vendorMap.get(order?.vendor_id),
+      shoppingList: shopList,
+    })
+  })
+
+  // 6. Apply search filter
+  const search = query.search.trim().toLowerCase()
+  if (search) {
+    transactions = transactions.filter(t =>
+      `${t.id} ${t.internalReference} ${t.externalReference} ${t.mpesaReceipt} ${t.vendorName ?? ''} ${t.typeLabel} ${t.subscriptionTierLabel ?? ''}`.toLowerCase().includes(search)
     )
   }
 
-  let transactions: TransactionRecord[] = orders.map((o) =>
-    mapOrderToTransaction(o, vendorMap),
-  )
-
-  // Server-side text search
-  const search = query.search.trim().toLowerCase()
-  if (search) {
-    transactions = transactions.filter((t) => {
-      const haystack = `${t.id} ${t.orderNumber} ${t.vendorName} ${t.mpesaCode}`.toLowerCase()
-      return haystack.includes(search)
-    })
-  }
-
-  // Server-side status filter
+  // 7. Apply status filter
   if (query.status !== 'All') {
-    transactions = transactions.filter((t) => t.status === query.status)
+    transactions = transactions.filter(t => t.status === query.status)
   }
 
-  const total = countRes.count || transactions.length
+  // 8. Apply type filter
+  if (query.type !== 'All') {
+    transactions = transactions.filter(t => t.type === query.type)
+  }
+
+  const total = count ?? transactions.length
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   return {
@@ -198,50 +423,25 @@ async function fetchTransactionsRaw(
     page,
     pageSize: PAGE_SIZE,
     totalPages,
-    debug: {
-      ordersFound: orders.length,
-    },
   }
 }
 
-function emptyPayload(query: TransactionsQuery): TransactionsPayload {
-  return {
-    transactions: [],
-    stats: {
-      spent: 0,
-      pending: 0,
-      refunded: 0,
-      successfulCount: 0,
-      pendingCount: 0,
-      refundedCount: 0,
-      failedCount: 0,
-    },
-    total: 0,
-    page: query.page,
-    pageSize: PAGE_SIZE,
-    totalPages: 0,
-  }
-}
+// ── Public API ─────────────────────────────────────────
 
 export async function fetchUserTransactions(
-  raw: Partial<TransactionsQuery> = {},
+  raw: Partial<TransactionsQuery> = {}
 ): Promise<TransactionsPayload> {
-  const status: TransactionStatus | 'All' = isStatus(raw.status)
-    ? raw.status
-    : raw.status === 'All'
-      ? 'All'
-      : 'All'
-
   const query: TransactionsQuery = {
     search: sanitize(raw.search, ''),
-    status,
+    status: isTransactionStatus(raw.status) ? raw.status : 'All',
+    type: isTransactionType(raw.type) ? raw.type : 'All',
     page: Math.max(1, Math.floor(Number(raw.page) || 1)),
   }
 
   try {
     return await fetchTransactionsRaw(query)
   } catch (err) {
-    console.error('Cached transactions failed, falling back:', err)
-    return fetchTransactionsRaw(query)
+    console.error('[Transactions] Fatal error:', err)
+    return emptyPayload(query)
   }
 }

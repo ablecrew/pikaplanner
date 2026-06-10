@@ -6,25 +6,52 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   Search, Eye, Download as DownloadIcon, DollarSign, RefreshCw,
   Clock, CheckCircle2, XCircle, AlertCircle, Filter, Copy,
-  Printer, ChevronLeft, ChevronRight, CreditCard, ArrowRight,
+  Printer, ChevronLeft, ChevronRight, CreditCard,
+  Sparkles, UtensilsCrossed, ShoppingBag, Store,
+  ArrowUpRight, ExternalLink, Calendar, Hash, Phone,
+  Receipt, TrendingUp, X, ChevronDown,
 } from 'lucide-react'
 import {
   fetchUserTransactions,
   type TransactionsPayload,
   type TransactionRecord,
   type TransactionStatus,
+  type TransactionType,
 } from './actions'
 
+// ── Constants ──────────────────────────────────────────
+
 const STATUS_STYLES: Record<TransactionStatus, { bg: string; text: string; border: string; dot: string }> = {
-  'Successful': { bg: 'bg-emerald-50',  text: 'text-emerald-700',  border: 'border-emerald-200',  dot: 'bg-emerald-500' },
-  'Pending':    { bg: 'bg-amber-50',    text: 'text-amber-700',    border: 'border-amber-200',    dot: 'bg-amber-500' },
-  'Failed':     { bg: 'bg-red-50',      text: 'text-red-700',      border: 'border-red-200',      dot: 'bg-red-500' },
-  'Refunded':   { bg: 'bg-violet-50',   text: 'text-violet-700',   border: 'border-violet-200',   dot: 'bg-violet-500' },
+  'Successful': { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+  'Processing': { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', dot: 'bg-amber-500' },
+  'Failed': { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', dot: 'bg-red-500' },
+  'Cancelled': { bg: 'bg-gray-50', text: 'text-gray-500', border: 'border-gray-200', dot: 'bg-gray-400' },
 }
 
-const FILTER_STATUSES: (TransactionStatus | 'All')[] = [
-  'All', 'Successful', 'Pending', 'Failed', 'Refunded',
+const STATUS_FILTERS: (TransactionStatus | 'All')[] = [
+  'All', 'Successful', 'Processing', 'Failed', 'Cancelled',
 ]
+
+const TYPE_STYLES: Record<TransactionType, { bg: string; text: string; icon: any }> = {
+  subscription: { bg: 'bg-violet-50', text: 'text-violet-600', icon: Sparkles },
+  meal_order: { bg: 'bg-emerald-50', text: 'text-emerald-600', icon: UtensilsCrossed },
+  shopping_cart: { bg: 'bg-sky-50', text: 'text-sky-600', icon: ShoppingBag },
+  vendor_subscription: { bg: 'bg-amber-50', text: 'text-amber-600', icon: Store },
+}
+
+const TYPE_FILTERS: (TransactionType | 'All')[] = [
+  'All', 'subscription', 'meal_order', 'shopping_cart',
+]
+
+const TYPE_FILTER_LABELS: Record<TransactionType | 'All', string> = {
+  All: 'All',
+  subscription: 'Subscriptions',
+  meal_order: 'Orders',
+  shopping_cart: 'Shopping',
+  vendor_subscription: 'Vendor',
+}
+
+// ── Helpers ────────────────────────────────────────────
 
 function formatCurrency(n: number): string {
   return `KES ${n.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -33,15 +60,33 @@ function formatCurrency(n: number): string {
 function formatDateTime(iso?: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return d.toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function Skeleton({ className }: { className?: string }) {
-  return <div className={`bg-gray-100 rounded-lg animate-pulse ${className}`} />
+function formatTime(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
 }
+
+function formatFullDateTime(iso?: string | null): string {
+  if (!iso) return '—'
+  return `${formatDateTime(iso)} at ${formatTime(iso)}`
+}
+
+function timeAgo(iso?: string | null): string {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'Just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+// ── Main Component ─────────────────────────────────────
 
 export default function UserTransactionsClient({
   initialData,
@@ -53,55 +98,49 @@ export default function UserTransactionsClient({
   const [data, setData] = useState<TransactionsPayload>(initialData)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [infoMessage, setInfoMessage] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
   const [selected, setSelected] = useState<TransactionRecord | null>(null)
   const [, startTransition] = useTransition()
 
   const [searchInput, setSearchInput] = useState(searchParams.get('search') || '')
   const [search, setSearch] = useState(searchParams.get('search') || '')
   const [statusFilter, setStatusFilter] = useState<TransactionStatus | 'All'>(
-    (searchParams.get('status') as TransactionStatus) || 'All',
+    (searchParams.get('status') as TransactionStatus) || 'All'
+  )
+  const [typeFilter, setTypeFilter] = useState<TransactionType | 'All'>(
+    (searchParams.get('type') as TransactionType) || 'All'
   )
   const [page, setPage] = useState(Number(searchParams.get('page') || 1))
 
   // Debounce search
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearch(searchInput)
-    }, 350)
+    const timer = window.setTimeout(() => setSearch(searchInput), 350)
     return () => window.clearTimeout(timer)
   }, [searchInput])
 
+  // Fetch data
   const fetchData = useCallback(
-    async (next: {
-      search?: string
-      status?: TransactionStatus | 'All'
-      page?: number
-    }) => {
+    async (next: { search?: string; status?: TransactionStatus | 'All'; type?: TransactionType | 'All'; page?: number }) => {
       setLoading(true)
       setError(null)
       try {
-        const params = new URLSearchParams(searchParams.toString())
+        const params = new URLSearchParams()
         const newSearch = next.search ?? search
         const newStatus = next.status ?? statusFilter
+        const newType = next.type ?? typeFilter
         const newPage = next.page ?? page
 
         if (newSearch) params.set('search', newSearch)
-        else params.delete('search')
-
-        if (newStatus && newStatus !== 'All') params.set('status', newStatus)
-        else params.delete('status')
-
+        if (newStatus !== 'All') params.set('status', newStatus)
+        if (newType !== 'All') params.set('type', newType)
         if (newPage > 1) params.set('page', String(newPage))
-        else params.delete('page')
 
-        startTransition(() => {
-          router.push(`?${params.toString()}`)
-        })
+        startTransition(() => { router.push(`?${params.toString()}`) })
 
         const nextData = await fetchUserTransactions({
           search: newSearch,
           status: newStatus,
+          type: newType,
           page: newPage,
         })
         setData(nextData)
@@ -112,107 +151,65 @@ export default function UserTransactionsClient({
         setLoading(false)
       }
     },
-    [searchParams, router, search, statusFilter, page],
+    [searchParams, router, search, statusFilter, typeFilter, page]
   )
 
-  // Push search/status changes to the server
   useEffect(() => {
     fetchData({ page: 1 })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, statusFilter])
+  }, [search, statusFilter, typeFilter])
 
   const transactions = data.transactions
 
-  const statusCounts = useMemo(() => {
-    const counts: Record<TransactionStatus | 'All', number> = {
-      All: data.total,
-      Successful: 0,
-      Pending: 0,
-      Failed: 0,
-      Refunded: 0,
-    }
-    data.transactions.forEach((t) => {
-      counts[t.status] = (counts[t.status] || 0) + 1
-    })
-    return counts
-  }, [data.transactions, data.total])
-
   const copyToClipboard = useCallback((text: string) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(text).then(() => {
-        setInfoMessage('✓ Transaction ID copied to clipboard')
-        window.setTimeout(() => setInfoMessage(null), 3000)
-      })
-    }
-  }, [])
-
-  const printReceipt = useCallback((txn: TransactionRecord) => {
-    const w = window.open('', '_blank')
-    if (!w) return
-    w.document.write(`
-      <html>
-        <head>
-          <title>Receipt - Transaction #${txn.id}</title>
-          <style>
-            body { font-family: 'Courier New', Courier, monospace; padding: 25px; max-width: 320px; margin: 0 auto; color: #000; }
-            .center { text-align: center; }
-            .divider { border-top: 1px dashed #000; margin: 12px 0; }
-            .flex-between { display: flex; justify-content: space-between; }
-            .bold { font-weight: bold; }
-            .meta { font-size: 11px; margin-bottom: 2px; }
-          </style>
-        </head>
-        <body>
-          <h2 class="center">🍴 PIKAPLAN INVOICE</h2>
-          <p class="center meta">Transaction ID: ${txn.id}</p>
-          <p class="center meta">Order #: ${txn.orderNumber}</p>
-          <p class="center meta">${formatDateTime(txn.date)}</p>
-          <div class="divider"></div>
-          <div class="meta bold">Merchant:</div>
-          <div class="meta">${txn.vendorName}</div>
-          <div class="divider"></div>
-          <div class="flex-between meta"><span>Subtotal</span><span>${formatCurrency(txn.subtotal)}</span></div>
-          <div class="flex-between meta"><span>Platform Fee</span><span>${formatCurrency(txn.platformFee)}</span></div>
-          <div class="flex-between meta"><span>Delivery Fee</span><span>${formatCurrency(txn.deliveryFee)}</span></div>
-          <div class="divider"></div>
-          <div class="flex-between bold" style="margin-top: 8px; font-size: 14px;">
-            <span>TOTAL</span>
-            <span>${formatCurrency(txn.amount)}</span>
-          </div>
-          <div class="divider"></div>
-          <div class="meta bold">Payment Details:</div>
-          <div class="meta">Status: ${txn.status.toUpperCase()}</div>
-          <div class="meta">Method: ${txn.method}</div>
-          ${txn.mpesaCode ? `<div class="meta">Ref: ${txn.mpesaCode}</div>` : ''}
-          <div class="divider"></div>
-          <p class="center bold" style="font-size: 12px; margin-top: 20px;">Thank you for your payment!</p>
-        </body>
-      </html>
-    `)
-    w.document.close()
-    w.print()
+    navigator.clipboard?.writeText(text).then(() => {
+      setToast('✓ Copied to clipboard')
+      setTimeout(() => setToast(null), 2500)
+    })
   }, [])
 
   const exportCsv = useCallback(() => {
     const rows = [
-      ['Transaction ID', 'Order #', 'Merchant', 'Amount', 'Subtotal', 'Delivery Fee', 'Platform Fee', 'Method', 'M-Pesa Code', 'Status', 'Date'],
-      ...transactions.map((t) => [
-        t.id, t.orderNumber, t.vendorName, t.amount, t.subtotal, t.deliveryFee, t.platformFee, t.method, t.mpesaCode || '', t.status, formatDateTime(t.date),
+      ['Transaction ID', 'Type', 'Description', 'Amount', 'Status', 'Payment Method', 'M-Pesa Receipt', 'Date'],
+      ...transactions.map(t => [
+        t.id,
+        t.typeLabel,
+        t.type === 'subscription' ? `${t.subscriptionTierLabel} Plan` :
+          t.type === 'meal_order' ? `${t.vendorName ?? 'Order'} (${t.itemCount ?? 0} items)` :
+            `Shopping Cart (${t.shoppingItemCount ?? 0} items)`,
+        String(t.amount),
+        t.status,
+        t.method,
+        t.mpesaReceipt || '',
+        formatFullDateTime(t.initiatedAt),
       ]),
     ]
-    const csv = rows
-      .map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n')
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'my-transactions.csv'
+    a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }, [transactions])
+
+  const getTransactionDescription = useCallback((t: TransactionRecord): string => {
+    if (t.type === 'subscription' || t.type === 'vendor_subscription') {
+      return `${t.subscriptionTierLabel ?? t.typeLabel} Plan${t.subscriptionDuration ? ` · ${t.subscriptionDuration}` : ''}`
+    }
+    if (t.type === 'meal_order') {
+      const parts = [t.vendorName, t.itemCount ? `${t.itemCount} item${t.itemCount > 1 ? 's' : ''}` : null].filter(Boolean)
+      return parts.length > 0 ? parts.join(' · ') : 'Meal Order'
+    }
+    if (t.type === 'shopping_cart') {
+      return `Shopping Cart${t.shoppingItemCount ? ` · ${t.shoppingItemCount} items` : ''}`
+    }
+    return t.typeLabel
+  }, [])
+
+  // ── Render ──
 
   return (
     <motion.div
@@ -222,16 +219,16 @@ export default function UserTransactionsClient({
       className="font-poppins"
     >
       {/* Header */}
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-black text-gray-900 flex items-center gap-2.5">
-            My Transactions
+            Transaction History
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-gradient-to-r from-emerald-50 to-emerald-100 border border-emerald-200 text-xs font-bold text-emerald-700">
-              <CreditCard size={12} /> {data.total} total
+              <Receipt size={12} /> {data.total} records
             </span>
           </h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Review complete details of your payments and payouts.
+          <p className="mt-1.5 text-sm text-gray-500">
+            All your payments, subscriptions and orders in one place.
           </p>
         </div>
 
@@ -249,11 +246,25 @@ export default function UserTransactionsClient({
             className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition shadow-sm disabled:opacity-50"
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh
           </button>
         </div>
       </div>
 
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -20, x: '-50%' }}
+            className="fixed top-4 left-1/2 z-50 flex items-center gap-2 rounded-2xl border border-emerald-100 bg-white shadow-2xl px-5 py-3 text-sm font-bold text-emerald-800"
+          >
+            <CheckCircle2 size={16} className="text-emerald-500" /> {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Error */}
       <AnimatePresence>
         {error && (
           <motion.div
@@ -265,88 +276,123 @@ export default function UserTransactionsClient({
             <AlertCircle size={16} /> {error}
           </motion.div>
         )}
-        {infoMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-2xl border border-emerald-100 bg-white shadow-xl px-5 py-4 text-sm font-bold text-emerald-800"
-          >
-            <CheckCircle2 size={18} className="text-emerald-500" /> {infoMessage}
-          </motion.div>
-        )}
       </AnimatePresence>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {[
-          { label: 'Total Spent', value: formatCurrency(data.stats.spent), helper: `${data.stats.successfulCount} successful`, icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-          { label: 'Pending Payment', value: formatCurrency(data.stats.pending), helper: `${data.stats.pendingCount} in progress`, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
-          { label: 'Total Refunded', value: formatCurrency(data.stats.refunded), helper: `${data.stats.refundedCount} transactions`, icon: RefreshCw, color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
-          { label: 'Failed Payments', value: data.stats.failedCount, helper: 'Unsuccessful attempts', icon: XCircle, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-100' },
-        ].map((s) => (
+          {
+            label: 'Total Spent',
+            value: formatCurrency(data.stats.totalSpent),
+            helper: `${data.stats.successfulCount} successful`,
+            icon: DollarSign,
+            color: 'text-emerald-600',
+            bg: 'bg-emerald-50',
+            border: 'border-emerald-100',
+          },
+          {
+            label: 'Processing',
+            value: String(data.stats.processingCount),
+            helper: 'Awaiting confirmation',
+            icon: Clock,
+            color: 'text-amber-600',
+            bg: 'bg-amber-50',
+            border: 'border-amber-100',
+          },
+          {
+            label: 'Failed',
+            value: String(data.stats.failedCount),
+            helper: 'Unsuccessful payments',
+            icon: XCircle,
+            color: 'text-red-600',
+            bg: 'bg-red-50',
+            border: 'border-red-100',
+          },
+          {
+            label: 'Active Plans',
+            value: String(data.stats.activeSubscriptions),
+            helper: 'Current subscriptions',
+            icon: Sparkles,
+            color: 'text-violet-600',
+            bg: 'bg-violet-50',
+            border: 'border-violet-100',
+          },
+        ].map(s => (
           <div key={s.label} className={`bg-white rounded-2xl border ${s.border} p-5 shadow-sm hover:shadow-md transition-shadow`}>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">{s.label}</p>
-              <div className={`p-2 rounded-xl ${s.bg} ${s.color} flex items-center justify-center`}>
-                <s.icon size={18} />
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{s.label}</p>
+              <div className={`p-2 rounded-xl ${s.bg} ${s.color}`}>
+                <s.icon size={16} />
               </div>
             </div>
             <p className="text-2xl font-black text-gray-900 tracking-tight">{s.value}</p>
-            <p className="text-xs text-gray-500 mt-1 font-medium">{s.helper}</p>
+            <p className="text-[11px] text-gray-400 mt-1 font-medium">{s.helper}</p>
           </div>
         ))}
       </div>
 
       {/* Table Container */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-gray-100 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-          <div className="relative w-full max-w-xs">
+        {/* Search + Filters */}
+        <div className="p-4 border-b border-gray-100 space-y-3">
+          {/* Search */}
+          <div className="relative max-w-sm">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search by ID, M-Pesa code, chef..."
-              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-100 text-gray-900"
+              onChange={e => setSearchInput(e.target.value)}
+              placeholder="Search by ID, receipt, merchant..."
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-300 text-gray-900 transition"
             />
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
-              <Filter size={12} /> Status:
-            </span>
-            {FILTER_STATUSES.map((s) => {
-              const count = statusCounts[s]
-              return (
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            {/* Status filters */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">Status</span>
+              {STATUS_FILTERS.map(s => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
                     statusFilter === s
                       ? 'bg-emerald-500 text-white shadow-sm'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                 >
                   {s}
-                  {count > 0 && (
-                    <span
-                      className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                        statusFilter === s ? 'bg-white/25' : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
                 </button>
-              )
-            })}
+              ))}
+            </div>
+
+            <div className="hidden sm:block w-px h-5 bg-gray-200" />
+
+            {/* Type filters */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mr-1">Type</span>
+              {TYPE_FILTERS.map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTypeFilter(t)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition ${
+                    typeFilter === t
+                      ? 'bg-gray-900 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {TYPE_FILTER_LABELS[t]}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
+        {/* Table */}
         <div className="overflow-x-auto">
           {loading ? (
             <div className="p-6 space-y-3">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />
+                <div key={i} className="h-16 bg-gray-100 rounded-xl animate-pulse" />
               ))}
             </div>
           ) : transactions.length === 0 ? (
@@ -355,63 +401,91 @@ export default function UserTransactionsClient({
                 <CreditCard size={28} className="text-gray-300" />
               </div>
               <p className="font-bold text-gray-800 text-lg">No transactions found</p>
-              <p className="text-xs text-gray-400 max-w-sm mt-1">
-                Payments made for completed kitchen orders will appear here.
+              <p className="text-xs text-gray-400 max-w-sm">
+                Your payment history for subscriptions, orders, and shopping will appear here.
               </p>
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-gray-400 text-xs uppercase tracking-wide border-b border-gray-50 bg-gray-50/50">
-                  <th className="px-5 py-3.5 font-semibold">Transaction</th>
-                  <th className="px-5 py-3.5 font-semibold">Order</th>
-                  <th className="px-5 py-3.5 font-semibold">Merchant</th>
-                  <th className="px-5 py-3.5 font-semibold">Amount</th>
-                  <th className="px-5 py-3.5 font-semibold">Method</th>
-                  <th className="px-5 py-3.5 font-semibold">Date</th>
-                  <th className="px-5 py-3.5 font-semibold">Status</th>
-                  <th className="px-5 py-3.5 text-right"></th>
+                <tr className="text-left text-gray-400 text-[10px] uppercase tracking-wider border-b border-gray-50 bg-gray-50/50">
+                  <th className="px-5 py-3 font-bold">Transaction</th>
+                  <th className="px-5 py-3 font-bold">Details</th>
+                  <th className="px-5 py-3 font-bold">Amount</th>
+                  <th className="px-5 py-3 font-bold">Method</th>
+                  <th className="px-5 py-3 font-bold">Date</th>
+                  <th className="px-5 py-3 font-bold">Status</th>
+                  <th className="px-5 py-3 text-right"></th>
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((txn) => {
-                  const style = STATUS_STYLES[txn.status] || STATUS_STYLES['Pending']
+                {transactions.map(txn => {
+                  const style = STATUS_STYLES[txn.status]
+                  const typeStyle = TYPE_STYLES[txn.type]
+                  const TypeIcon = typeStyle.icon
+
                   return (
                     <tr
                       key={txn.id}
-                      className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                      className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer group"
                       onClick={() => setSelected(txn)}
                     >
-                      <td className="px-5 py-4 font-mono text-xs font-bold text-gray-900">{txn.id}</td>
-                      <td className="px-5 py-4 font-mono text-xs text-gray-500">#{txn.orderNumber}</td>
+                      {/* Transaction + Type */}
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0">
-                            {txn.vendorName.charAt(0).toUpperCase()}
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-xl ${typeStyle.bg} ${typeStyle.text} flex items-center justify-center shrink-0`}>
+                            <TypeIcon size={16} />
                           </div>
-                          <span className="font-semibold text-gray-800">{txn.vendorName}</span>
+                          <div>
+                            <p className="font-mono text-xs font-bold text-gray-900">{txn.id}</p>
+                            <p className="text-[10px] text-gray-400 mt-0.5">{txn.typeLabel}</p>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-5 py-4 font-extrabold text-gray-900">{formatCurrency(txn.amount)}</td>
+
+                      {/* Details */}
+                      <td className="px-5 py-4 max-w-[220px]">
+                        <p className="text-xs font-semibold text-gray-800 truncate">
+                          {getTransactionDescription(txn)}
+                        </p>
+                        {txn.mpesaReceipt && (
+                          <p className="text-[10px] text-gray-400 mt-0.5 font-mono">
+                            Receipt: {txn.mpesaReceipt}
+                          </p>
+                        )}
+                      </td>
+
+                      {/* Amount */}
                       <td className="px-5 py-4">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700 uppercase">
-                          {txn.method}
+                        <p className="font-extrabold text-gray-900">{formatCurrency(txn.amount)}</p>
+                      </td>
+
+                      {/* Method */}
+                      <td className="px-5 py-4">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-gray-100 text-[10px] font-bold text-gray-600 uppercase">
+                          <Phone size={10} /> {txn.method}
                         </span>
                       </td>
-                      <td className="px-5 py-4 text-xs text-gray-500">{formatDateTime(txn.date)}</td>
+
+                      {/* Date */}
                       <td className="px-5 py-4">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${style.bg} ${style.text} ${style.border}`}>
+                        <p className="text-xs text-gray-600">{formatDateTime(txn.initiatedAt)}</p>
+                        <p className="text-[10px] text-gray-400">{timeAgo(txn.initiatedAt)}</p>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${style.bg} ${style.text} ${style.border}`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                           {txn.status}
                         </span>
                       </td>
+
+                      {/* Actions */}
                       <td className="px-5 py-4 text-right">
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelected(txn)
-                          }}
-                          className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+                          onClick={e => { e.stopPropagation(); setSelected(txn) }}
+                          className="p-1.5 rounded-lg text-gray-300 hover:bg-gray-100 hover:text-gray-600 transition opacity-0 group-hover:opacity-100"
                         >
                           <Eye size={15} />
                         </button>
@@ -427,31 +501,32 @@ export default function UserTransactionsClient({
         {/* Pagination */}
         {data.totalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100 bg-gray-50/30">
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-gray-500">
               Page <span className="font-semibold text-gray-900">{data.page}</span> of{' '}
               <span className="font-semibold text-gray-900">{data.totalPages}</span>
+              <span className="text-gray-400"> · {data.total} transactions</span>
             </p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => fetchData({ page: data.page - 1 })}
                 disabled={data.page <= 1 || loading}
-                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
               >
-                <ChevronLeft size={15} /> Previous
+                <ChevronLeft size={14} /> Prev
               </button>
               <button
                 onClick={() => fetchData({ page: data.page + 1 })}
                 disabled={data.page >= data.totalPages || loading}
-                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
               >
-                Next <ChevronRight size={15} />
+                Next <ChevronRight size={14} />
               </button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Detail Modal */}
+      {/* ─── Detail Modal ────────────────────────────── */}
       <AnimatePresence>
         {selected && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -466,89 +541,173 @@ export default function UserTransactionsClient({
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col"
+              className="relative w-full max-w-lg bg-white rounded-[1.5rem] shadow-2xl overflow-hidden max-h-[92vh] flex flex-col"
             >
-              <div className="p-5 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                    Transaction Ref
-                  </p>
-                  <h3 className="font-mono text-base font-bold text-gray-900 mt-0.5">
-                    {selected.id}
-                  </h3>
+              {/* Modal Header */}
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      {(() => {
+                        const ts = TYPE_STYLES[selected.type]
+                        const TIcon = ts.icon
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold ${ts.bg} ${ts.text}`}>
+                            <TIcon size={10} /> {selected.typeLabel}
+                          </span>
+                        )
+                      })()}
+                    </div>
+                    <h3 className="font-mono text-sm font-bold text-gray-900">{selected.id}</h3>
+                  </div>
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${STATUS_STYLES[selected.status].bg} ${STATUS_STYLES[selected.status].text} ${STATUS_STYLES[selected.status].border}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[selected.status].dot}`} />
+                    {selected.status}
+                  </span>
                 </div>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
-                    STATUS_STYLES[selected.status].bg
-                  } ${STATUS_STYLES[selected.status].text} ${
-                    STATUS_STYLES[selected.status].border
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${STATUS_STYLES[selected.status].dot}`} />
-                  {selected.status}
-                </span>
               </div>
 
-              <div className="p-5 space-y-4 overflow-y-auto flex-1">
-                <div className="rounded-xl border border-gray-100 p-4 space-y-2 bg-gray-50/50">
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>Items Subtotal</span>
-                    <span>{formatCurrency(selected.subtotal)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>Platform Convenience Fee</span>
-                    <span>{formatCurrency(selected.platformFee)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-600">
-                    <span>Delivery Charge</span>
-                    <span>{formatCurrency(selected.deliveryFee)}</span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t border-gray-200 text-sm font-black text-gray-900">
-                    <span>Grand Total Paid</span>
-                    <span className="text-emerald-700">
-                      {formatCurrency(selected.amount)}
-                    </span>
-                  </div>
+              {/* Modal Body */}
+              <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                {/* Amount */}
+                <div className="text-center py-4 rounded-2xl bg-gray-50 border border-gray-100">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Amount Paid</p>
+                  <p className="text-4xl font-black text-gray-900 mt-1">{formatCurrency(selected.amount)}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-xs">
+                {/* Info Grid */}
+                <div className="grid grid-cols-2 gap-3">
                   {[
-                    ['Order Number', `#${selected.orderNumber}`],
-                    ['Merchant Kitchen', selected.vendorName],
-                    ['Payment Method', selected.method],
-                    ['M-Pesa Reference', selected.mpesaCode || '—'],
-                    ['Date Placed', formatDateTime(selected.date)],
-                    ['Delivery Destination', selected.deliveryAddress || '—'],
-                  ].map(([l, v]) => (
-                    <div key={String(l)} className="bg-gray-50/20 rounded-xl border border-gray-100 p-3">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1">
-                        {l}
-                      </p>
-                      <p className="font-semibold text-gray-800 truncate">{String(v)}</p>
+                    { label: 'Type', value: selected.typeLabel },
+                    { label: 'Payment Method', value: selected.method },
+                    { label: 'Internal Ref', value: selected.internalReference, copy: true },
+                    { label: 'External Ref', value: selected.externalReference || '—' },
+                    { label: 'M-Pesa Receipt', value: selected.mpesaReceipt || '—', copy: !!selected.mpesaReceipt },
+                    { label: 'Initiated', value: formatFullDateTime(selected.initiatedAt) },
+                    ...(selected.completedAt ? [{ label: 'Completed', value: formatFullDateTime(selected.completedAt) }] : []),
+                  ].map(item => (
+                    <div key={item.label} className="bg-gray-50/50 rounded-xl border border-gray-100 p-3">
+                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider mb-1">{item.label}</p>
+                      <p className="text-xs font-semibold text-gray-800 truncate">{item.value}</p>
+                      {'copy' in item && item.copy && item.value !== '—' && (
+                        <button
+                          onClick={() => copyToClipboard(item.value)}
+                          className="text-[10px] text-emerald-600 font-bold mt-1 hover:underline"
+                        >
+                          Copy
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
 
-                {selected.customerNotes && (
-                  <div className="rounded-xl bg-amber-50 border border-amber-100 p-3 text-xs text-amber-900 leading-relaxed">
-                    <span className="font-bold block mb-1">Invoicing Notes:</span>
-                    {selected.customerNotes}
+                {/* Type-specific details */}
+                {selected.type === 'subscription' && (
+                  <div className="rounded-2xl border border-violet-100 bg-violet-50/30 p-4 space-y-2">
+                    <p className="text-[10px] font-bold text-violet-500 uppercase tracking-wider">Subscription Details</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold">Plan</p>
+                        <p className="text-xs font-bold text-gray-800">{selected.subscriptionTierLabel}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold">Duration</p>
+                        <p className="text-xs font-bold text-gray-800">{selected.subscriptionDuration}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold">Auto-Renew</p>
+                        <p className="text-xs font-bold text-gray-800">{selected.autoRenew ? '✅ Enabled' : '❌ Disabled'}</p>
+                      </div>
+                      {selected.subscriptionExpiresAt && (
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-bold">Expires</p>
+                          <p className="text-xs font-bold text-gray-800">{formatFullDateTime(selected.subscriptionExpiresAt)}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {selected.type === 'meal_order' && (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/30 p-4 space-y-2">
+                    <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Order Details</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {selected.vendorName && (
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-bold">Merchant</p>
+                          <p className="text-xs font-bold text-gray-800">{selected.vendorName}</p>
+                        </div>
+                      )}
+                      {selected.itemCount != null && (
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-bold">Items</p>
+                          <p className="text-xs font-bold text-gray-800">{selected.itemCount} item{selected.itemCount !== 1 ? 's' : ''}</p>
+                        </div>
+                      )}
+                      {selected.deliveryStatus && (
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-bold">Delivery Status</p>
+                          <p className="text-xs font-bold text-gray-800 capitalize">{selected.deliveryStatus}</p>
+                        </div>
+                      )}
+                      {selected.deliveryAddress && (
+                        <div className="col-span-2">
+                          <p className="text-[10px] text-gray-400 font-bold">Delivery Address</p>
+                          <p className="text-xs font-bold text-gray-800">{selected.deliveryAddress}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {selected.type === 'shopping_cart' && (
+                  <div className="rounded-2xl border border-sky-100 bg-sky-50/30 p-4 space-y-2">
+                    <p className="text-[10px] font-bold text-sky-500 uppercase tracking-wider">Shopping Cart</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {selected.shoppingListName && (
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-bold">List Name</p>
+                          <p className="text-xs font-bold text-gray-800">{selected.shoppingListName}</p>
+                        </div>
+                      )}
+                      {selected.shoppingItemCount != null && (
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-bold">Items</p>
+                          <p className="text-xs font-bold text-gray-800">{selected.shoppingItemCount}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Status Message */}
+                {selected.statusMessage && (
+                  <div className={`rounded-xl p-3 text-xs leading-relaxed ${
+                    selected.status === 'Failed' ? 'bg-red-50 border border-red-100 text-red-700' :
+                    selected.status === 'Cancelled' ? 'bg-gray-50 border border-gray-200 text-gray-500' :
+                    'bg-amber-50 border border-amber-100 text-amber-700'
+                  }`}>
+                    <span className="font-bold">Status:</span> {selected.statusMessage}
                   </div>
                 )}
               </div>
 
-              <div className="p-5 border-t border-gray-100 flex gap-2.5">
-                <button
-                  onClick={() => printReceipt(selected)}
-                  className="flex-1 py-3 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
-                >
-                  <Printer size={14} /> Print Receipt
-                </button>
+              {/* Modal Footer */}
+              <div className="p-5 border-t border-gray-100 flex gap-3">
                 <button
                   onClick={() => copyToClipboard(selected.id)}
-                  className="flex-1 py-3 bg-gradient-to-r from-[#32CD32] to-[#1A5C3A] text-white rounded-xl text-xs font-extrabold hover:shadow-md transition flex items-center justify-center gap-1.5"
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white text-xs font-bold shadow-md shadow-emerald-100 hover:shadow-lg transition flex items-center justify-center gap-1.5"
                 >
-                  <Copy size={14} /> Copy ID Reference
+                  <Copy size={14} /> Copy Ref
+                </button>
+                <button
+                  onClick={() => {
+                    if (selected.mpesaReceipt) copyToClipboard(selected.mpesaReceipt)
+                    else copyToClipboard(selected.internalReference)
+                  }}
+                  className="flex-1 py-3 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 transition flex items-center justify-center gap-1.5"
+                >
+                  <Hash size={14} /> Copy Receipt
                 </button>
               </div>
             </motion.div>
