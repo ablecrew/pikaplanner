@@ -72,33 +72,99 @@ export async function checkSubscriptionStatusAction(
   userId: string,
   tier: string,
   isVendor: boolean
-) {
+): Promise<{ active: boolean; failed: boolean; subscription: Subscription | null }> {
   const supabase = await createClient()
-  const tableName = isVendor ? 'vendor_subscriptions' : 'subscriptions'
-  const userIdField = isVendor ? 'vendor_id' : 'user_id'
 
-  const { data } = await supabase
-    .from(tableName)
+  // 1. Check DB first
+  const table = isVendor ? 'vendor_subscriptions' : 'subscriptions'
+  const { data: sub } = await supabase
+    .from(table)
     .select('*')
-    .eq(userIdField, userId)
+    .eq('user_id', userId)
     .eq('tier', tier)
     .order('created_at', { ascending: false })
     .limit(1)
+    .maybeSingle()
 
-  if (data && data.length > 0 && data[0].status === 'active') {
-    if (isVendor) {
-      await supabase
-        .from('vendors')
-        .update({
-          subscription_tier: tier,
-          subscription_end_date: data[0].expires_at,
-        })
-        .eq('id', userId)
-    }
-    return { active: true, subscription: data[0] as Subscription }
+  if (!sub) return { active: false, failed: false, subscription: null }
+
+  // 2. If already active, return immediately
+  if (sub.status === 'active') {
+    return { active: true, failed: false, subscription: sub as Subscription }
   }
 
-  return { active: false, subscription: null }
+  // 3. If failed, return immediately
+  if (sub.status === 'failed') {
+    return { active: false, failed: true, subscription: sub as Subscription }
+  }
+
+  // 4. If still pending — query Payhero directly to check payment status
+  if (sub.status === 'pending') {
+    const txnTable = isVendor ? 'transactions' : 'transactions'
+    const { data: txn } = await supabase
+      .from(txnTable)
+      .select('payhero_reference, id')
+      .eq('related_id', sub.id)
+      .eq('purpose', isVendor ? 'vendor_subscription' : 'subscription')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (txn?.payhero_reference) {
+      try {
+        const payheroRes = await fetch('https://api.payhero.co.ke/api/v2/query', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${process.env.PAYHERO_API_KEY}`,
+          },
+          body: JSON.stringify({ CheckoutRequestID: txn.payhero_reference }),
+        })
+
+        const result = await payheroRes.json()
+        const isSuccess = result.ResultCode === 0 || result.Status === 'Success'
+
+        if (isSuccess) {
+          // Manually activate — callback was missed
+          const now = new Date()
+          const durationDays = isVendor ? 30 : (tier === 'daily' ? 1 : tier === 'weekly' ? 7 : tier === 'monthly' ? 30 : 365)
+          const expiresAt = new Date(now.getTime() + durationDays * 86400000)
+
+          await supabase
+            .from(table)
+            .update({
+              status: 'active',
+              starts_at: now.toISOString(),
+              expires_at: expiresAt.toISOString(),
+              updated_at: now.toISOString(),
+            })
+            .eq('id', sub.id)
+
+          await supabase
+            .from('transactions')
+            .update({
+              status: 'success',
+              status_message: 'Resolved via client polling',
+              mpesa_receipt: result.MpesaReceiptNumber ?? null,
+              completed_at: now.toISOString(),
+            })
+            .eq('id', txn.id)
+
+          const { data: updated } = await supabase
+            .from(table)
+            .select('*')
+            .eq('id', sub.id)
+            .single()
+
+          return { active: true, failed: false, subscription: updated as Subscription }
+        }
+      } catch (err) {
+        console.error('[checkSubscriptionStatus] Payhero query failed:', err)
+      }
+    }
+  }
+
+  return { active: false, failed: false, subscription: sub as Subscription }
 }
 
 // ── Toggle Auto-Renewal ───────────────────────────────────

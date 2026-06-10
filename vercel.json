@@ -1,0 +1,9 @@
+
+{
+  "crons": [
+    {
+      "path": "/api/cron/check-stuck-payments",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

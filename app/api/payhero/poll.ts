@@ -1,0 +1,101 @@
+import { createClient } from '@supabase/supabase-js'
+
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { persistSession: false } }
+  )
+}
+
+/**
+ * Called by the client to check if a transaction was completed
+ * as a fallback when callbacks fail
+ */
+export async function checkTransactionStatus(transactionId: string) {
+  const supabase = getServiceClient()
+
+  const { data: txn } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('id', transactionId)
+    .single()
+
+  if (!txn) return { found: false }
+
+  // If already completed, return current status
+  if (txn.status === 'success' || txn.status === 'failed' || txn.status === 'cancelled') {
+    return { 
+      found: true, 
+      status: txn.status,
+      completed: true 
+    }
+  }
+
+  // Still processing — check with Payhero API directly
+  if (txn.payhero_reference) {
+    const payheroStatus = await queryPayheroTransaction(txn.payhero_reference)
+    
+    if (payheroStatus && payheroStatus.status === 'success') {
+      // Manually complete it
+      await supabase
+        .from('transactions')
+        .update({
+          status: 'success',
+          status_message: 'Completed via polling fallback',
+          mpesa_receipt: payheroStatus.mpesaReceipt,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', txn.id)
+
+      // Activate subscription
+      if (txn.purpose === 'subscription' && txn.related_id) {
+        await activateSubscription(supabase, txn)
+      }
+
+      return { found: true, status: 'success', completed: true }
+    }
+  }
+
+  return { found: true, status: txn.status, completed: false }
+}
+
+async function queryPayheroTransaction(checkoutRequestId: string) {
+  try {
+    const res = await fetch('https://api.payhero.co.ke/api/v2/query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.PAYHERO_API_KEY}`,
+      },
+      body: JSON.stringify({ CheckoutRequestID: checkoutRequestId }),
+    })
+    return await res.json()
+  } catch (err) {
+    console.error('[Payhero] Query failed:', err)
+    return null
+  }
+}
+
+async function activateSubscription(supabase: any, txn: any) {
+  const metadata = txn.metadata ?? {}
+  const tier = metadata.tier ?? 'monthly'
+  const durationDays = metadata.durationDays ?? 30
+  const billingType = metadata.billingType ?? 'one-time'
+
+  const now = new Date()
+  const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
+
+  await supabase
+    .from('subscriptions')
+    .update({
+      status: 'active',
+      starts_at: now.toISOString(),
+      expires_at: expiresAt.toISOString(),
+      billing_type: billingType,
+      auto_renew: billingType === 'auto-renew',
+      updated_at: now.toISOString(),
+    })
+    .eq('id', txn.related_id)
+    .eq('status', 'pending')
+}

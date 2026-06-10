@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     const metadata = txn.metadata ?? {}
 
-    // 🆕 RENEWAL HANDLING (priority — check first)
+    // RENEWAL HANDLING (priority — check first)
     if (metadata.isRenewal && metadata.renewalId) {
       await handleRenewal(supabase, txn, metadata, isSuccess, isCancelled, r)
       return NextResponse.json({ received: true, kind: 'renewal' })
@@ -99,7 +99,7 @@ export async function POST(req: NextRequest) {
 // HANDLERS
 // ════════════════════════════════════════════════════════
 
-// ── 🆕 Renewal Handler ───────────────────────────────────
+// ── Renewal Handler ───────────────────────────────────
 async function handleRenewal(
   supabase: any,
   txn: any,
@@ -199,7 +199,7 @@ async function handleSuccessfulPayment(supabase: any, txn: any) {
       }
       break
 
-    // 🆕 SUBSCRIPTION ACTIVATION (with auto-renew setup)
+    // SUBSCRIPTION ACTIVATION (with auto-renew setup)
     case 'subscription': {
         if (!txn.related_id) {
           console.warn('[Payhero] Subscription without related_id, skipping')
@@ -234,7 +234,7 @@ async function handleSuccessfulPayment(supabase: any, txn: any) {
         break
       }
 
-    // 🆕 VENDOR SUBSCRIPTION
+    // VENDOR SUBSCRIPTION
     case 'vendor_subscription':
     case 'vendor_listing': {
       if (!txn.related_id) break
@@ -304,7 +304,7 @@ async function handleSuccessfulPayment(supabase: any, txn: any) {
   }
 }
 
-// ── 🆕 Failed Payment Handler ────────────────────────────
+// ── Failed Payment Handler ────────────────────────────
 async function handleFailedPayment(supabase: any, txn: any, reason: string) {
   console.log('[Payhero] Payment failed:', txn.reference, reason)
 

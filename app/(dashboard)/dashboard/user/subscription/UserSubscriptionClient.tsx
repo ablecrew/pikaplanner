@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useMemo, useCallback, memo } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Sparkles, CheckCircle2, Loader2, AlertCircle, RefreshCw,
   Crown, Star, Zap, Bell, Calendar, CreditCard, Gift, X,
   Shield, Smartphone, ChevronRight, Info, Sun, Target,
   Brain, ShoppingBag, UtensilsCrossed, ListChecks, BarChart3,
-  Repeat,
+  Repeat, Clock,
 } from 'lucide-react'
 import {
   UserProfile, Subscription, RenewalHistoryItem,
@@ -75,6 +75,11 @@ const MEAL_PLANS: SubscriptionPlan[] = [
     ],
   },
 ]
+
+const POLL_INTERVAL = 4000
+const MAX_POLL_ATTEMPTS = 75
+const REDIRECT_DELAY_MS = 2500
+const MEAL_GENERATOR_URL = '/meal-generator'
 
 const formatMoney = (value: number) =>
   `KES ${value.toLocaleString('en-KE', { minimumFractionDigits: 0 })}`
@@ -184,9 +189,13 @@ const PlanCard = memo(function PlanCard({
 
       <div className="mt-8">
         {isCurrentPlan ? (
-          <div className="rounded-2xl bg-emerald-100 px-5 py-3 text-center text-sm font-bold text-emerald-700">
-            Current Plan — {formatRelativeTime(new Date().toISOString())}
-          </div>
+          <a
+            href={MEAL_GENERATOR_URL}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-emerald-200 transition-all hover:-translate-y-0.5 hover:shadow-xl"
+          >
+            <UtensilsCrossed size={16} />
+            Start Planning
+          </a>
         ) : (
           <button
             onClick={onSelect}
@@ -223,9 +232,16 @@ export default function UserSubscriptionClient({
   const [showMpesaInput, setShowMpesaInput] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null)
-  const [polling, setPolling] = useState(false)
-  // 🆕 Auto-renew preference
   const [billingType, setBillingType] = useState<BillingType>('auto-renew')
+
+  // Polling state
+  const [polling, setPolling] = useState(false)
+  const [pollAttempts, setPollAttempts] = useState(0)
+  const [pollMessage, setPollMessage] = useState('')
+  const [isRedirecting, setIsRedirecting] = useState(false)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const redirectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const currentTier = activeSubscription?.tier || 'none'
   const isOnFreeTrial = activeSubscription?.amount_paid === 0 && activeSubscription?.tier === 'daily'
@@ -243,12 +259,165 @@ export default function UserSubscriptionClient({
     [activeSubscription]
   )
 
+  // Cleanup everything on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current)
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+      if (redirectRef.current) clearTimeout(redirectRef.current)
+    }
+  }, [])
+
+  // Redirect to meal generator after delay
+  const redirectToMealGenerator = useCallback((delay = REDIRECT_DELAY_MS) => {
+    setIsRedirecting(true)
+    redirectRef.current = setTimeout(() => {
+      window.location.href = MEAL_GENERATOR_URL
+    }, delay)
+  }, [])
+
+  // Cancel pending redirect
+  const cancelRedirect = useCallback(() => {
+    if (redirectRef.current) {
+      clearTimeout(redirectRef.current)
+      redirectRef.current = null
+    }
+    setIsRedirecting(false)
+  }, [])
+
+  // Stop polling
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    setPolling(false)
+    setPollAttempts(0)
+    setPollMessage('')
+  }, [])
+
+  // Refresh data helper
+  const refreshData = useCallback(async () => {
+    if (!userId) return
+    const data = await fetchSubscriptionData(userId)
+    setProfile(data.profile)
+    setActiveSubscription(data.subscription)
+    setRenewalHistory(data.renewalHistory)
+    return data
+  }, [userId])
+
+  // Start polling
+  const startPolling = useCallback((plan: SubscriptionPlan, isVendor: boolean) => {
+    setPolling(true)
+    setPollAttempts(0)
+    setPollMessage('Waiting for M-Pesa payment confirmation...')
+
+    let attempts = 0
+
+    const poll = setInterval(async () => {
+      attempts++
+      setPollAttempts(attempts)
+
+      if (attempts <= 5) {
+        setPollMessage('Please check your phone and enter your M-Pesa PIN...')
+      } else if (attempts <= 15) {
+        setPollMessage('Still waiting for payment confirmation...')
+      } else if (attempts <= 30) {
+        setPollMessage('This is taking longer than usual. Please ensure you completed the payment.')
+      } else {
+        setPollMessage('Payment is being verified. Please wait a bit longer...')
+      }
+
+      try {
+        const status = await checkSubscriptionStatusAction(userId, plan.tier, isVendor)
+
+        if (status.active) {
+          // ✅ Payment confirmed!
+          clearInterval(poll)
+          if (timeoutRef.current) clearTimeout(timeoutRef.current)
+          intervalRef.current = null
+          timeoutRef.current = null
+
+          setPolling(false)
+          setActiveSubscription(status.subscription)
+
+          // Refresh full data
+          const fresh = await fetchSubscriptionData(userId)
+          setProfile(fresh.profile)
+          setActiveSubscription(fresh.subscription)
+          setRenewalHistory(fresh.renewalHistory)
+
+          // Show success then redirect to meal generator
+          setSuccess(
+            `🎉 ${plan.display_name} plan activated! Redirecting to meal planner...`
+          )
+          redirectToMealGenerator()
+          return
+        }
+
+        if (status.failed) {
+          clearInterval(poll)
+          if (timeoutRef.current) clearTimeout(timeoutRef.current)
+          intervalRef.current = null
+          timeoutRef.current = null
+
+          setPolling(false)
+          setError('Payment was not completed. Please try again.')
+          return
+        }
+      } catch (err) {
+        console.error('Polling error:', err)
+      }
+
+      if (attempts >= MAX_POLL_ATTEMPTS) {
+        clearInterval(poll)
+        if (timeoutRef.current) clearTimeout(timeoutRef.current)
+        intervalRef.current = null
+        timeoutRef.current = null
+
+        setPolling(false)
+        setPollMessage('')
+        setError(
+          'Payment confirmation timed out. If you completed the payment, your subscription will be activated shortly. You can also try refreshing this page.'
+        )
+      }
+    }, POLL_INTERVAL)
+
+    intervalRef.current = poll
+
+    timeoutRef.current = setTimeout(() => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+        setPolling(false)
+        setPollMessage('')
+        setError(
+          'Payment confirmation timed out. If you paid successfully, please refresh the page.'
+        )
+      }
+    }, MAX_POLL_ATTEMPTS * POLL_INTERVAL + 5000)
+  }, [userId, redirectToMealGenerator])
+
+  // Manual refresh during polling
+  const handleManualRefresh = useCallback(async () => {
+    const data = await refreshData()
+    if (data?.subscription && data.subscription.status === 'active') {
+      stopPolling()
+      setSuccess('✅ Your subscription is active! Redirecting to meal planner...')
+      redirectToMealGenerator(1500)
+    }
+  }, [refreshData, stopPolling, redirectToMealGenerator])
+
   const handleSubscribe = useCallback(
     (plan: SubscriptionPlan) => {
       setSelectedPlan(plan)
       setShowMpesaInput(true)
       setPhoneNumber(profile?.phone || '')
-      setBillingType('auto-renew') // default to recommended
+      setBillingType('auto-renew')
     },
     [profile]
   )
@@ -258,12 +427,11 @@ export default function UserSubscriptionClient({
     setProcessing(true)
     setError(null)
     setSuccess(null)
-  
+
     try {
       const isVendor =
         typeof window !== 'undefined' && window.location.pathname.includes('/vendor/')
-  
-      // 🆕 Call Payhero through the server action
+
       const result = await initiateSubscriptionPaymentAction({
         tier: selectedPlan.tier,
         amount: selectedPlan.price_kes,
@@ -272,65 +440,21 @@ export default function UserSubscriptionClient({
         billingType,
         isVendor,
       })
-  
+
       if (!result.success) {
         throw new Error(result.error)
       }
-  
+
       setSuccess(result.message)
       setShowMpesaInput(false)
-      setPolling(true)
       setProcessing(false)
-  
-      // Poll for subscription activation via Server Action
-      const checkInterval = setInterval(async () => {
-        try {
-          const status = await checkSubscriptionStatusAction(userId, selectedPlan.tier, isVendor)
-          if (status.active) {
-            clearInterval(checkInterval)
-            setPolling(false)
-            setActiveSubscription(status.subscription)
-            setSuccess(
-              `🎉 ${selectedPlan.display_name} plan activated! ${
-                billingType === 'auto-renew'
-                  ? 'Auto-renewal is enabled — we\'ll prompt you 1 day before expiry.'
-                  : 'Enjoy your premium features.'
-              }`
-            )
-  
-            // Refresh to pull all the updated subscription metadata
-            const fresh = await fetchSubscriptionData(userId)
-            setActiveSubscription(fresh.subscription)
-            setRenewalHistory(fresh.renewalHistory)
-          }
-        } catch (err) {
-          console.error('Polling error:', err)
-        }
-      }, 3000)
-  
-      // Safety timeout after 2 minutes
-      setTimeout(() => {
-        clearInterval(checkInterval)
-        if (polling) {
-          setPolling(false)
-          setError(
-            'Payment confirmation timed out. If you paid, your subscription will be activated shortly.'
-          )
-        }
-      }, 120000)
+
+      startPolling(selectedPlan, isVendor)
     } catch (err: any) {
       setError(err.message || 'Payment failed')
       setProcessing(false)
     }
-  }, [selectedPlan, phoneNumber, userId, billingType, polling])
-
-  const refreshData = async () => {
-    if (!userId) return
-    const data = await fetchSubscriptionData(userId)
-    setProfile(data.profile)
-    setActiveSubscription(data.subscription)
-    setRenewalHistory(data.renewalHistory)
-  }
+  }, [selectedPlan, phoneNumber, userId, billingType, startPolling])
 
   return (
     <motion.div
@@ -339,6 +463,7 @@ export default function UserSubscriptionClient({
       transition={{ duration: 0.3 }}
       className="font-poppins"
     >
+      {/* Header */}
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-black text-gray-900 flex items-center gap-2.5">
@@ -361,6 +486,7 @@ export default function UserSubscriptionClient({
         </button>
       </div>
 
+      {/* Banners */}
       <AnimatePresence>
         {error && (
           <motion.div
@@ -370,6 +496,12 @@ export default function UserSubscriptionClient({
             className="mb-5 flex items-center gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700"
           >
             <AlertCircle size={16} /> {error}
+            <button
+              onClick={() => setError(null)}
+              className="ml-auto text-red-400 hover:text-red-600"
+            >
+              <X size={14} />
+            </button>
           </motion.div>
         )}
         {success && (
@@ -379,11 +511,25 @@ export default function UserSubscriptionClient({
             exit={{ opacity: 0, y: -8 }}
             className="mb-5 flex items-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700"
           >
-            <CheckCircle2 size={16} /> {success}
+            {isRedirecting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <CheckCircle2 size={16} />
+            )}
+            <span className="flex-1">{success}</span>
+            {isRedirecting && (
+              <button
+                onClick={cancelRedirect}
+                className="inline-flex items-center gap-1 rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-600 hover:bg-emerald-200 transition"
+              >
+                <X size={12} /> Cancel
+              </button>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* Free Trial Banner */}
       {isOnFreeTrial && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
@@ -410,6 +556,7 @@ export default function UserSubscriptionClient({
         </motion.div>
       )}
 
+      {/* Active Plan Banner */}
       {activeSubscription && !isOnFreeTrial && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
@@ -438,12 +585,19 @@ export default function UserSubscriptionClient({
                 <p className="text-2xl font-black text-white capitalize">{currentTier}</p>
                 <p className="text-xs font-semibold text-slate-400">Plan</p>
               </div>
+              <a
+                href={MEAL_GENERATOR_URL}
+                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500 px-5 py-4 text-sm font-bold text-white shadow-lg hover:bg-emerald-600 transition text-center"
+              >
+                <UtensilsCrossed size={16} />
+                Start Planning
+              </a>
             </div>
           </div>
         </motion.div>
       )}
 
-      {/* 🆕 ManageSubscription block — only shows for active paid plans */}
+      {/* Manage Subscription */}
       {activeSubscription && !isOnFreeTrial && (
         <ManageSubscription
           subscription={activeSubscription}
@@ -453,6 +607,7 @@ export default function UserSubscriptionClient({
         />
       )}
 
+      {/* Plan Cards */}
       <div className="mb-8 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {MEAL_PLANS.map((plan) => (
           <PlanCard
@@ -465,6 +620,7 @@ export default function UserSubscriptionClient({
         ))}
       </div>
 
+      {/* Why Subscribe */}
       <div className="mb-8 rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm md:p-8">
         <div className="mb-6 text-center">
           <h2 className="text-2xl font-black text-slate-950">Why subscribe to a meal plan?</h2>
@@ -496,6 +652,7 @@ export default function UserSubscriptionClient({
         </div>
       </div>
 
+      {/* Polling Banner */}
       <AnimatePresence>
         {polling && (
           <motion.div
@@ -506,18 +663,54 @@ export default function UserSubscriptionClient({
           >
             <Loader2 size={40} className="mx-auto mb-4 animate-spin" />
             <h3 className="text-xl font-black">Waiting for payment confirmation...</h3>
-            <p className="mt-2 text-sm text-white/80">
-              Please check your phone and enter your M-Pesa PIN to complete the payment.
-            </p>
+            <p className="mt-2 text-sm text-white/80">{pollMessage}</p>
+
+            <div className="mt-4 mx-auto max-w-xs">
+              <div className="flex justify-between text-xs font-semibold text-white/60 mb-1">
+                <span>Checking payment...</span>
+                <span>{Math.min(pollAttempts * 4, 300)}s / 300s</span>
+              </div>
+              <div className="h-2 rounded-full bg-white/20 overflow-hidden">
+                <motion.div
+                  className="h-full rounded-full bg-white/60"
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${Math.min((pollAttempts / MAX_POLL_ATTEMPTS) * 100, 100)}%` }}
+                  transition={{ duration: 0.3 }}
+                />
+              </div>
+            </div>
+
             <div className="mt-4 flex items-center justify-center gap-2">
               <div className="h-2 w-2 animate-bounce rounded-full bg-white" style={{ animationDelay: '0s' }} />
               <div className="h-2 w-2 animate-bounce rounded-full bg-white" style={{ animationDelay: '0.2s' }} />
               <div className="h-2 w-2 animate-bounce rounded-full bg-white" style={{ animationDelay: '0.4s' }} />
             </div>
+
+            <div className="mt-5 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={handleManualRefresh}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/20 px-4 py-2.5 text-sm font-bold text-white backdrop-blur hover:bg-white/30 transition"
+              >
+                <RefreshCw size={14} />
+                Check Now
+              </button>
+              <button
+                onClick={stopPolling}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-sm font-bold text-white/80 backdrop-blur hover:bg-white/20 transition"
+              >
+                <X size={14} />
+                Stop Checking
+              </button>
+            </div>
+
+            <p className="mt-3 text-xs text-white/50">
+              We check every {POLL_INTERVAL / 1000}s. Max wait: {MAX_POLL_ATTEMPTS * POLL_INTERVAL / 1000 / 60} min.
+            </p>
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* FAQ */}
       <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm md:p-8">
         <h2 className="mb-6 text-center text-2xl font-black text-slate-950">Frequently asked questions</h2>
         <div className="mx-auto max-w-2xl space-y-4">
@@ -543,9 +736,7 @@ export default function UserSubscriptionClient({
         </div>
       </div>
 
-      {/* ────────────────────────────────────────────── */}
-      {/*  Payment Modal — with Billing Type chooser     */}
-      {/* ────────────────────────────────────────────── */}
+      {/* Payment Modal */}
       <AnimatePresence>
         {showMpesaInput && selectedPlan && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -598,13 +789,12 @@ export default function UserSubscriptionClient({
                 />
               </div>
 
-              {/* 🆕 BILLING TYPE TOGGLE */}
+              {/* Billing Type */}
               <div className="mb-5 rounded-2xl border-2 border-slate-100 p-3 space-y-2">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider px-1">
                   Billing
                 </p>
 
-                {/* Auto-renew option (recommended) */}
                 <label className="flex cursor-pointer items-start gap-3 p-3 rounded-xl border-2 transition hover:bg-slate-50 has-[:checked]:border-emerald-400 has-[:checked]:bg-emerald-50/50 border-transparent">
                   <input
                     type="radio"
@@ -629,7 +819,6 @@ export default function UserSubscriptionClient({
                   </div>
                 </label>
 
-                {/* One-time option */}
                 <label className="flex cursor-pointer items-start gap-3 p-3 rounded-xl border-2 transition hover:bg-slate-50 has-[:checked]:border-emerald-400 has-[:checked]:bg-emerald-50/50 border-transparent">
                   <input
                     type="radio"
