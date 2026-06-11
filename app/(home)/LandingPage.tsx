@@ -7,12 +7,12 @@ import {
   TrendingUp, Globe, Shield, Smartphone, BarChart3, MapPin, Truck, Calendar,
   UtensilsCrossed, Leaf, CheckCircle2, Coffee, Pizza, Cake, Waves, Smile,
   LifeBuoy, Rocket, Cookie, User, X, PenLine,
-  ShieldCheck, ChevronLeft, ChevronRight, // 🆕 Added
+  ShieldCheck, ChevronLeft, ChevronRight, 
 } from 'lucide-react'
 import Navbar from '@/components/navbar/Navbar'
 import Footer from '@/components/footer/Footer'
 
-// 🆕 Review system imports
+// Review system imports
 import ReviewModal from '@/app/(public)/_components/reviews/ReviewModal'
 import {
   fetchReviewsAction,
@@ -263,10 +263,10 @@ function TestimonialCard({ t, featured = false }: { t: (typeof TESTIMONIALS)[0];
 }
 
 const PLANS = [
-  { tier: 'Free', price: 0, period: 'Forever', features: ['3 meals/week', 'Basic recipes', 'Shopping list'], highlight: false },
+  { tier: 'Free', price: 0, period: 'The first 24 hour of regstration', features: ['3 meals', 'Basic recipes', 'Shopping list'], highlight: false },
   {
     tier: 'Weekly',
-    price: 50,
+    price: 55,
     period: '/week',
     features: ['Full week plan', 'All cuisines', 'AI suggestions', 'Vendor ordering'],
     highlight: true,
@@ -292,7 +292,7 @@ const MARQUEE_ITEMS = [
   { icon: Cookie, label: 'Snacks' },
 ]
 
-// 🆕 Now accepts initial review data from server wrapper
+//  Now accepts initial review data from server wrapper
 export default function LandingPage({
   initialReviews,
   initialStats,
@@ -303,7 +303,7 @@ export default function LandingPage({
   const [email, setEmail] = useState('')
   const [featuredIdx, setFeaturedIdx] = useState(0)
 
-  // 🆕 Live review system state
+  //  Live review system state
   const [liveReviews, setLiveReviews] = useState<Review[]>(initialReviews)
   const [liveStats, setLiveStats] = useState<ReviewStats>(initialStats)
   const [reviewModalOpen, setReviewModalOpen] = useState(false)
@@ -318,7 +318,7 @@ export default function LandingPage({
     return () => clearInterval(timer)
   }, [])
 
-  // 🆕 Auto-rotate live reviews carousel
+  //  Auto-rotate live reviews carousel
   useEffect(() => {
     if (liveReviews.length <= 3) return
     const maxIdx = Math.max(0, liveReviews.length - 3)
@@ -328,7 +328,7 @@ export default function LandingPage({
     return () => clearInterval(timer)
   }, [liveReviews.length])
 
-  // 🆕 Refresh reviews after a new submission
+  //  Refresh reviews after a new submission
   const handleReviewSuccess = async () => {
     try {
       const [freshReviews, freshStats] = await Promise.all([
@@ -595,8 +595,8 @@ export default function LandingPage({
           />
           <div className="relative max-w-[1000px] mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             {[
-              { value: 10000, suffix: '+', label: 'Happy Users', icon: Smile },
-              { value: 50000, suffix: '+', label: 'Meals Planned', icon: UtensilsCrossed },
+              { value: 8, suffix: '+', label: 'Happy Users', icon: Smile },
+              { value: 7, suffix: '+', label: 'Meals Planned', icon: UtensilsCrossed },
               { value: 95, suffix: '%', label: 'Satisfaction Rate', icon: Star },
               { value: 24, suffix: '/7', label: 'Support Available', icon: LifeBuoy },
             ].map((stat) => (
@@ -613,7 +613,7 @@ export default function LandingPage({
           </div>
         </section>
 
-        {/* ── 🆕 TESTIMONIALS — LIVE REVIEWS ────────────── */}
+        {/* ──  TESTIMONIALS — LIVE REVIEWS ────────────── */}
         <section className="py-24 px-6 bg-[#FAFAF9]">
           <div className="max-w-[1100px] mx-auto">
             <div className="text-center mb-14">
@@ -675,7 +675,7 @@ export default function LandingPage({
               </div>
             </div>
 
-            {/* 🆕 Live reviews carousel OR hardcoded fallback */}
+            {/* Live reviews carousel OR hardcoded fallback */}
             {hasLiveReviews ? (
               <LiveReviewsCarousel
                 reviews={liveReviews}
@@ -704,7 +704,7 @@ export default function LandingPage({
               </>
             )}
 
-            {/* 🆕 Top themes insights */}
+            {/* Top themes insights */}
             {hasLiveReviews && (liveStats.topLikes.length > 0 || liveStats.topImprovements.length > 0) && (
               <div className="mt-12 grid sm:grid-cols-2 gap-4">
                 {liveStats.topLikes.length > 0 && (
@@ -877,7 +877,7 @@ export default function LandingPage({
         <Footer />
       </div>
 
-      {/* 🆕 Review Modal */}
+      {/* Review Modal */}
       <ReviewModal
         open={reviewModalOpen}
         onClose={() => setReviewModalOpen(false)}
@@ -896,7 +896,7 @@ export default function LandingPage({
   )
 }
 
-// 🆕 ─── Live Reviews Carousel ─────────────────────────────
+// ─── Live Reviews Carousel ─────────────────────────────
 function LiveReviewsCarousel({
   reviews,
   featuredIdx,
@@ -970,7 +970,7 @@ function LiveReviewsCarousel({
   )
 }
 
-// 🆕 ─── Live Review Card (matches your existing style) ────
+// ─── Live Review Card (matches your existing style) ────
 function LiveReviewCard({ review, featured }: { review: Review; featured: boolean }) {
   const initials = review.display_name
     .split(' ')
