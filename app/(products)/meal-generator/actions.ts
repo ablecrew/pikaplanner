@@ -143,11 +143,12 @@ export async function getSubscriptionInfo(userId: string): Promise<SubscriptionI
 
   const tier = sub?.tier ?? null
   const isActive = !!sub
+
+  // ✅ Any active subscription (including trial/daily) unlocks generation
   const isPremium = isActive && tier !== 'free' && tier !== null
 
   const limits = TIER_LIMITS[tier ?? 'free'] ?? TIER_LIMITS.free
 
-  // Count today's AI-generated plans
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
 
@@ -172,25 +173,18 @@ export async function getSubscriptionInfo(userId: string): Promise<SubscriptionI
   const generationsThisPeriod = periodCount ?? 0
 
   const daysRemaining = sub?.expires_at
-    ? Math.max(
-        0,
-        Math.ceil((new Date(sub.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-      )
+    ? Math.max(0, Math.ceil((new Date(sub.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0
 
   const canGenerate =
-    isPremium &&
+    isActive &&                              // ✅ active sub (trial counts)
     generationsToday < limits.perDay &&
     generationsThisPeriod < limits.perPeriod
 
   return {
-    isActive,
-    isPremium,
-    tier,
+    isActive, isPremium, tier,
     expiresAt: sub?.expires_at ?? null,
-    daysRemaining,
-    generationsToday,
-    generationsThisPeriod,
+    daysRemaining, generationsToday, generationsThisPeriod,
     dailyLimit: limits.perDay,
     periodLimit: limits.perPeriod,
     canGenerate,
