@@ -1,25 +1,37 @@
 'use client'
 
 import { useState, useEffect, useRef, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Smartphone, CheckCircle2, XCircle, Loader2, Clock, RefreshCw,
   AlertCircle, Sparkles, ArrowRight, Copy, Check,
 } from 'lucide-react'
 import { fetchTransactionAction, syncTransactionStatusAction, type Transaction } from './actions'
+import { checkSubscriptionStatusAction } from '@/app/(dashboard)/dashboard/user/subscription/actions'
 import { formatKES, maskPhone } from '@/lib/payhero/utils'
 import Link from 'next/link'
 
 type Props = {
-  reference: string
-  amount: number
+  reference: string              
+  subscriptionId?: string        
+  tier?: string                  
+  amount: number                 
   statusMessage?: string | null
   onSuccess?: () => void
   onRetry?: () => void
 }
 
 export default function PaymentStatus({
-  reference, amount, statusMessage, onSuccess, onRetry,
+  reference,
+  subscriptionId,
+  tier = 'weekly',
+  amount,
+  statusMessage,
+  onSuccess,
+  onRetry,
 }: Props) {
+  const router = useRouter()
+
   const [txn, setTxn] = useState<Transaction | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [copied, setCopied] = useState(false)
@@ -33,17 +45,47 @@ export default function PaymentStatus({
     return () => { if (timerRef.current) clearInterval(timerRef.current) }
   }, [])
 
-  // Poll for status every 3 seconds
+  // ✅ Poll SUBSCRIPTION status (not just transaction)
   useEffect(() => {
     const poll = async () => {
-      const fresh = await fetchTransactionAction(reference)
-      if (fresh) setTxn(fresh)
+      // 1. Check transaction status
+      if (reference) {
+        const fresh = await fetchTransactionAction(reference)
+        if (fresh) setTxn(fresh)
+      }
 
-      // Stop polling on terminal states
-      if (fresh && ['success', 'failed', 'cancelled', 'expired'].includes(fresh.status)) {
+      // 2. ✅ CRITICAL: Check subscription status (this activates it if webhook missed)
+      if (subscriptionId) {
+        const subResult = await checkSubscriptionStatusAction('', tier, false)
+        
+        if (subResult.active) {
+          // ✅ Subscription is active — success!
+          if (intervalRef.current) clearInterval(intervalRef.current)
+          if (timerRef.current) clearInterval(timerRef.current)
+          
+          // Set success flag for toast on next page
+          localStorage.setItem('payment_success', 'true')
+          
+          // Redirect to meal generator
+          setTimeout(() => {
+            router.push('/dashboard/meal-generator')
+          }, 1500)
+          
+          if (onSuccess) onSuccess()
+          return
+        }
+
+        if (subResult.failed) {
+          if (intervalRef.current) clearInterval(intervalRef.current)
+          if (timerRef.current) clearInterval(timerRef.current)
+        }
+      }
+
+      // 3. Stop polling on terminal transaction states
+      if (txn && ['success', 'failed', 'cancelled', 'expired'].includes(txn.status)) {
         if (intervalRef.current) clearInterval(intervalRef.current)
         if (timerRef.current) clearInterval(timerRef.current)
-        if (fresh.status === 'success' && onSuccess) onSuccess()
+        if (txn.status === 'success' && onSuccess) onSuccess()
       }
     }
 
@@ -54,13 +96,15 @@ export default function PaymentStatus({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current)
     }
-  }, [reference, onSuccess])
+  }, [reference, subscriptionId, tier, router, txn, onSuccess])
 
   // Manual status sync (calls Payhero directly)
   const handleSync = () => {
     startTransition(async () => {
-      const fresh = await syncTransactionStatusAction(reference)
-      if (fresh) setTxn(fresh)
+      if (reference) {
+        const fresh = await syncTransactionStatusAction(reference)
+        if (fresh) setTxn(fresh)
+      }
     })
   }
 
@@ -120,7 +164,7 @@ export default function PaymentStatus({
     },
   }
 
-  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending
+  const config = STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.pending
   const Icon = config.icon
   const isTerminal = ['success', 'failed', 'cancelled', 'expired'].includes(status)
   const isProcessing = ['pending', 'processing'].includes(status)
@@ -211,10 +255,10 @@ export default function PaymentStatus({
       <div className="p-4 bg-slate-50 border-t border-gray-100">
         {status === 'success' && (
           <Link
-            href="/dashboard/user/overview"
+            href="/dashboard/meal-generator"
             className="flex items-center justify-center gap-2 w-full rounded-xl bg-gradient-to-r from-[#32CD32] to-[#1A5C3A] py-3 text-sm font-black uppercase text-white shadow-md transition hover:shadow-lg"
           >
-            <Sparkles size={14} /> Continue
+            <Sparkles size={14} /> Continue to Meal Generator
             <ArrowRight size={14} />
           </Link>
         )}
@@ -228,7 +272,7 @@ export default function PaymentStatus({
               Try Again
             </button>
             <Link
-              href="/dashboard/user/overview"
+              href="/dashboard/user/subscription"
               className="flex-1 text-center rounded-xl bg-slate-700 py-3 text-xs font-black uppercase text-white hover:bg-slate-800 transition"
             >
               Cancel

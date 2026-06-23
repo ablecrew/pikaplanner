@@ -1,31 +1,34 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Smartphone, Loader2, AlertCircle, CheckCircle2, Lock, Shield, Sparkles,
 } from 'lucide-react'
-import { initiatePaymentAction } from './actions'
-import PaymentStatus from './PaymentStatus'
+import { initiateSubscriptionPaymentAction } from '@/app/(dashboard)/dashboard/user/subscription/actions'
 import { formatKES, normalizeKenyanPhone } from '@/lib/payhero/utils'
-import type { PaymentPurpose } from '@/lib/payhero/types'
 
 type Props = {
   amount: number
-  purpose: PaymentPurpose
-  relatedId?: string
+  tier: string
+  durationDays: number
   defaultPhone?: string
   description?: string
   onSuccess?: () => void
 }
 
 export default function CheckoutForm({
-  amount, purpose, relatedId, defaultPhone = '', description, onSuccess,
+  amount,
+  tier,
+  durationDays,
+  defaultPhone = '',
+  description,
+  onSuccess,
 }: Props) {
+  const router = useRouter()
   const [phone, setPhone] = useState(defaultPhone)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [globalError, setGlobalError] = useState<string | null>(null)
-  const [activeRef, setActiveRef] = useState<string | null>(null)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -34,40 +37,30 @@ export default function CheckoutForm({
     setGlobalError(null)
 
     startTransition(async () => {
-      const result = await initiatePaymentAction({
+      // ✅ Use subscription-specific action
+      const result = await initiateSubscriptionPaymentAction({
+        tier,
         amount,
+        durationDays,
         phone,
-        purpose,
-        relatedId,
+        billingType: 'one-time',
+        isVendor: false,
       })
 
       if (!result.success) {
-        if (result.field) setErrors({ [result.field]: result.error })
-        else setGlobalError(result.error)
+        setGlobalError(result.error)
         return
       }
 
-      setActiveRef(result.reference)
-      setStatusMessage(result.message)
+      // ✅ REDIRECT to payment status page with ALL required params
+      router.push(
+        `/checkout/payment-status?transactionId=${result.reference}&subscriptionId=${result.subscriptionId}&tier=${tier}&amount=${amount}`
+      )
     })
   }
 
   const formattedPhone = phone ? normalizeKenyanPhone(phone) : null
 
-  // Show status polling UI once payment is initiated
-  if (activeRef) {
-    return (
-      <PaymentStatus
-        reference={activeRef}
-        amount={amount}
-        statusMessage={statusMessage}
-        onSuccess={onSuccess}
-        onRetry={() => setActiveRef(null)}
-      />
-    )
-  }
-
-  // Initial payment form
   return (
     <div className="bg-white rounded-3xl border border-gray-100 shadow-xl overflow-hidden max-w-md mx-auto">
       {/* Header */}

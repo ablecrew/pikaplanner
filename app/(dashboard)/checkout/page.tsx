@@ -9,6 +9,8 @@ export default async function CheckoutPage({
 }: {
   searchParams: Promise<{
     amount?: string
+    tier?: string
+    durationDays?: string
     purpose?: string
     related_id?: string
   }>
@@ -25,8 +27,13 @@ export default async function CheckoutPage({
     .eq('id', user.id)
     .maybeSingle()
 
+  // ✅ Support both old (purpose-based) and new (tier-based) flows
   const amount = Number(params.amount ?? 0)
-  const purpose = (params.purpose ?? 'other') as any
+  const tier = params.tier ?? 'weekly'
+  const durationDays = params.durationDays 
+    ? Number(params.durationDays) 
+    : tier === 'daily' ? 1 : tier === 'weekly' ? 7 : tier === 'monthly' ? 30 : 365
+  const purpose = (params.purpose ?? 'subscription') as any
   const relatedId = params.related_id
 
   if (!amount || amount < 10) {
@@ -43,16 +50,24 @@ export default async function CheckoutPage({
     )
   }
 
+  // ✅ Map tier to description
+  const tierDescriptions: Record<string, string> = {
+    daily: 'Daily meal plan subscription',
+    weekly: 'Weekly meal plan subscription',
+    monthly: 'Monthly meal plan subscription',
+    yearly: 'Yearly meal plan subscription',
+  }
+
   return (
     <>
       <Navbar />
       <main className="min-h-screen bg-[#f8faf8] font-poppins py-10">
         <CheckoutForm
           amount={amount}
-          purpose={purpose}
-          relatedId={relatedId}
+          tier={tier}
+          durationDays={durationDays}
           defaultPhone={profile?.phone ?? ''}
-          description="Pay securely with M-Pesa"
+          description={tierDescriptions[tier] || 'Pay securely with M-Pesa'}
         />
       </main>
       <Footer />
