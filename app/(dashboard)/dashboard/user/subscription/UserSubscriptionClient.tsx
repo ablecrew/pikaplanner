@@ -310,8 +310,14 @@ export default function UserSubscriptionClient({
     return data
   }, [userId])
 
-  // Start polling
-  const startPolling = useCallback((plan: SubscriptionPlan, isVendor: boolean) => {
+  // ── Start polling (FIXED: now accepts subscriptionId) ──
+  const startPolling = useCallback((
+    plan: SubscriptionPlan,
+    isVendor: boolean,
+    subscriptionId: string  // ✅ NEW PARAMETER
+  ) => {
+    console.log('[startPolling] Starting with subscriptionId:', subscriptionId) // ✅ Debug log
+    
     setPolling(true)
     setPollAttempts(0)
     setPollMessage('Waiting for M-Pesa payment confirmation...')
@@ -333,10 +339,21 @@ export default function UserSubscriptionClient({
       }
 
       try {
-        const status = await checkSubscriptionStatusAction(userId, plan.tier, isVendor)
+        // ✅ FIXED: Pass subscriptionId (not userId)
+        console.log('[startPolling] Calling checkSubscriptionStatusAction with:', { subscriptionId, tier: plan.tier })
+        
+        const status = await checkSubscriptionStatusAction(
+          subscriptionId,  // ✅ Changed from userId to subscriptionId
+          plan.tier,
+          isVendor
+        )
+
+        console.log('[startPolling] Status result:', status) // ✅ Debug log
 
         if (status.active) {
           // ✅ Payment confirmed!
+          console.log('[startPolling] Subscription active! Redirecting...')
+          
           clearInterval(poll)
           if (timeoutRef.current) clearTimeout(timeoutRef.current)
           intervalRef.current = null
@@ -370,7 +387,7 @@ export default function UserSubscriptionClient({
           return
         }
       } catch (err) {
-        console.error('Polling error:', err)
+        console.error('[startPolling] Polling error:', err)
       }
 
       if (attempts >= MAX_POLL_ATTEMPTS) {
@@ -422,6 +439,7 @@ export default function UserSubscriptionClient({
     [profile]
   )
 
+  // ── Handle Payment (FIXED: passes subscriptionId to startPolling) ──
   const handlePayment = useCallback(async () => {
     if (!selectedPlan || !phoneNumber.trim() || !userId) return
     setProcessing(true)
@@ -432,6 +450,8 @@ export default function UserSubscriptionClient({
       const isVendor =
         typeof window !== 'undefined' && window.location.pathname.includes('/vendor/')
 
+      console.log('[handlePayment] Initiating payment...', { tier: selectedPlan.tier, amount: selectedPlan.price_kes })
+
       const result = await initiateSubscriptionPaymentAction({
         tier: selectedPlan.tier,
         amount: selectedPlan.price_kes,
@@ -441,6 +461,8 @@ export default function UserSubscriptionClient({
         isVendor,
       })
 
+      console.log('[handlePayment] Result:', result)
+
       if (!result.success) {
         throw new Error(result.error)
       }
@@ -449,8 +471,11 @@ export default function UserSubscriptionClient({
       setShowMpesaInput(false)
       setProcessing(false)
 
-      startPolling(selectedPlan, isVendor)
+      // ✅ FIXED: Pass subscriptionId to startPolling
+      console.log('[handlePayment] Starting polling with subscriptionId:', result.subscriptionId)
+      startPolling(selectedPlan, isVendor, result.subscriptionId)
     } catch (err: any) {
+      console.error('[handlePayment] Error:', err)
       setError(err.message || 'Payment failed')
       setProcessing(false)
     }
