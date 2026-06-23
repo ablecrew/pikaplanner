@@ -56,7 +56,11 @@ export default function PaymentStatus({
 
       // 2. ✅ CRITICAL: Check subscription status (this activates it if webhook missed)
       if (subscriptionId) {
-        const subResult = await checkSubscriptionStatusAction('', tier, false)
+        const subResult = await checkSubscriptionStatusAction(
+          subscriptionId,  // ✅ FIXED: Pass subscriptionId (was '')
+          tier,
+          false
+        )
         
         if (subResult.active) {
           // ✅ Subscription is active — success!

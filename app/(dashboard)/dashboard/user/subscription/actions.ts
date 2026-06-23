@@ -69,42 +69,45 @@ export async function fetchSubscriptionData(userId: string) {
 
 // ── Status Polling (after payment) ────────────────────────
 export async function checkSubscriptionStatusAction(
-  userId: string,
+  subscriptionId: string,  // ✅ Changed from userId to subscriptionId
   tier: string,
   isVendor: boolean
 ): Promise<{ active: boolean; failed: boolean; subscription: Subscription | null }> {
   const supabase = await createClient()
 
-  // 1. Check DB first
+  // 1. Check DB first — query by subscription ID directly
   const table = isVendor ? 'vendor_subscriptions' : 'subscriptions'
   const { data: sub } = await supabase
     .from(table)
     .select('*')
-    .eq('user_id', userId)
-    .eq('tier', tier)
-    .order('created_at', { ascending: false })
-    .limit(1)
+    .eq('id', subscriptionId)  // ✅ Query by ID, not user_id + tier
     .maybeSingle()
 
-  if (!sub) return { active: false, failed: false, subscription: null }
+  if (!sub) {
+    console.log('[checkSubscriptionStatus] No subscription found:', subscriptionId)
+    return { active: false, failed: false, subscription: null }
+  }
 
   // 2. If already active, return immediately
   if (sub.status === 'active') {
+    console.log('[checkSubscriptionStatus] Subscription already active:', subscriptionId)
     return { active: true, failed: false, subscription: sub as Subscription }
   }
 
   // 3. If failed, return immediately
   if (sub.status === 'failed') {
+    console.log('[checkSubscriptionStatus] Subscription failed:', subscriptionId)
     return { active: false, failed: true, subscription: sub as Subscription }
   }
 
   // 4. If still pending — query Payhero directly to check payment status
   if (sub.status === 'pending') {
-    const txnTable = isVendor ? 'transactions' : 'transactions'
+    console.log('[checkSubscriptionStatus] Subscription pending, checking Payhero...', subscriptionId)
+    
     const { data: txn } = await supabase
-      .from(txnTable)
+      .from('transactions')
       .select('payhero_reference, id')
-      .eq('related_id', sub.id)
+      .eq('related_id', sub.id)  // ✅ Match subscription ID
       .eq('purpose', isVendor ? 'vendor_subscription' : 'subscription')
       .order('created_at', { ascending: false })
       .limit(1)
@@ -122,9 +125,13 @@ export async function checkSubscriptionStatusAction(
         })
 
         const result = await payheroRes.json()
+        console.log('[checkSubscriptionStatus] Payhero response:', result)
+
         const isSuccess = result.ResultCode === 0 || result.Status === 'Success'
 
         if (isSuccess) {
+          console.log('[checkSubscriptionStatus] Payment successful, activating subscription:', subscriptionId)
+
           // Manually activate — callback was missed
           const now = new Date()
           const durationDays = isVendor ? 30 : (tier === 'daily' ? 1 : tier === 'weekly' ? 7 : tier === 'monthly' ? 30 : 365)
@@ -156,11 +163,16 @@ export async function checkSubscriptionStatusAction(
             .eq('id', sub.id)
             .single()
 
+          console.log('[checkSubscriptionStatus] Subscription activated:', subscriptionId)
           return { active: true, failed: false, subscription: updated as Subscription }
+        } else {
+          console.log('[checkSubscriptionStatus] Payhero payment not yet successful:', result)
         }
       } catch (err) {
         console.error('[checkSubscriptionStatus] Payhero query failed:', err)
       }
+    } else {
+      console.log('[checkSubscriptionStatus] No transaction found for subscription:', subscriptionId)
     }
   }
 
