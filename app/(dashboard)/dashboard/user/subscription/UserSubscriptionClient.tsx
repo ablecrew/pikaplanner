@@ -81,8 +81,11 @@ const MAX_POLL_ATTEMPTS = 75
 const REDIRECT_DELAY_MS = 2500
 const MEAL_GENERATOR_URL = '/meal-generator'
 
-const formatMoney = (value: number) =>
-  `KES ${value.toLocaleString('en-KE', { minimumFractionDigits: 0 })}`
+// ✅ FIXED: Handles null/undefined values
+const formatMoney = (value: number | null | undefined) => {
+  if (value == null) return 'KES 0'
+  return `KES ${value.toLocaleString('en-KE', { minimumFractionDigits: 0 })}`
+}
 
 const formatRelativeTime = (value?: string | null) => {
   if (!value) return '—'
@@ -244,19 +247,25 @@ export default function UserSubscriptionClient({
   const redirectRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const currentTier = activeSubscription?.tier || 'none'
-  const isOnFreeTrial = activeSubscription?.amount_paid === 0 && activeSubscription?.tier === 'daily'
+  
+  // ✅ FIXED: Null-safe check
+  const isOnFreeTrial = (activeSubscription?.amount_paid ?? 0) === 0 && activeSubscription?.tier === 'daily'
 
+  // ✅ FIXED: Handles invalid dates
   const daysRemaining = useMemo(() => {
     if (!activeSubscription?.expires_at) return 0
+    const expires = new Date(activeSubscription.expires_at)
+    if (isNaN(expires.getTime())) return 0
     return Math.max(
       0,
-      Math.ceil((new Date(activeSubscription.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      Math.ceil((expires.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     )
   }, [activeSubscription])
 
+  // ✅ FIXED: Added missing totalSaved calculation
   const totalSaved = useMemo(
     () => (activeSubscription?.tier === 'yearly' ? 388 : 0),
-    [activeSubscription]
+    [activeSubscription?.tier]
   )
 
   // Cleanup everything on unmount
@@ -314,9 +323,9 @@ export default function UserSubscriptionClient({
   const startPolling = useCallback((
     plan: SubscriptionPlan,
     isVendor: boolean,
-    subscriptionId: string  // ✅ NEW PARAMETER
+    subscriptionId: string
   ) => {
-    console.log('[startPolling] Starting with subscriptionId:', subscriptionId) // ✅ Debug log
+    console.log('[startPolling] Starting with subscriptionId:', subscriptionId)
     
     setPolling(true)
     setPollAttempts(0)
@@ -339,19 +348,17 @@ export default function UserSubscriptionClient({
       }
 
       try {
-        // ✅ FIXED: Pass subscriptionId (not userId)
         console.log('[startPolling] Calling checkSubscriptionStatusAction with:', { subscriptionId, tier: plan.tier })
         
         const status = await checkSubscriptionStatusAction(
-          subscriptionId,  // ✅ Changed from userId to subscriptionId
+          subscriptionId,
           plan.tier,
           isVendor
         )
 
-        console.log('[startPolling] Status result:', status) // ✅ Debug log
+        console.log('[startPolling] Status result:', status)
 
         if (status.active) {
-          // ✅ Payment confirmed!
           console.log('[startPolling] Subscription active! Redirecting...')
           
           clearInterval(poll)
@@ -362,13 +369,11 @@ export default function UserSubscriptionClient({
           setPolling(false)
           setActiveSubscription(status.subscription)
 
-          // Refresh full data
           const fresh = await fetchSubscriptionData(userId)
           setProfile(fresh.profile)
           setActiveSubscription(fresh.subscription)
           setRenewalHistory(fresh.renewalHistory)
 
-          // Show success then redirect to meal generator
           setSuccess(
             `🎉 ${plan.display_name} plan activated! Redirecting to meal planner...`
           )
@@ -471,7 +476,6 @@ export default function UserSubscriptionClient({
       setShowMpesaInput(false)
       setProcessing(false)
 
-      // ✅ FIXED: Pass subscriptionId to startPolling
       console.log('[handlePayment] Starting polling with subscriptionId:', result.subscriptionId)
       startPolling(selectedPlan, isVendor, result.subscriptionId)
     } catch (err: any) {
@@ -596,8 +600,9 @@ export default function UserSubscriptionClient({
               <h2 className="mt-2 text-3xl font-black tracking-tight capitalize">
                 {currentTier} Meal Plan
               </h2>
+              {/* ✅ FIXED: Null-safe amount_paid */}
               <p className="mt-1 text-sm text-slate-300">
-                {daysRemaining} days remaining · {formatMoney(activeSubscription.amount_paid)} paid
+                {daysRemaining} days remaining · {formatMoney(activeSubscription?.amount_paid)} paid
                 {totalSaved > 0 && ` · Saved ${formatMoney(totalSaved)}`}
               </p>
             </div>

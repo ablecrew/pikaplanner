@@ -11,11 +11,16 @@ import {
   type Subscription, type RenewalHistoryItem,
 } from './actions'
 
-const formatMoney = (v: number) => `KES ${v.toLocaleString('en-KE')}`
+// ✅ FIXED: Handles null/undefined values
+const formatMoney = (v: number | null | undefined) => {
+  if (v == null) return 'KES 0'
+  return `KES ${v.toLocaleString('en-KE', { minimumFractionDigits: 0 })}`
+}
+
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 
-//  Helper type + function — TypeScript-proof
+// ✅ Helper type + function — TypeScript-proof
 type ToastMessage = { type: 'success' | 'error'; text: string }
 
 type Props = {
@@ -88,10 +93,6 @@ export default function ManageSubscription({
       }
     })
   }
-
-  // ─────────────────────────────────────────────
-  // REST OF THE COMPONENT IS UNCHANGED
-  // ─────────────────────────────────────────────
 
   return (
     <div className="mb-8 rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm md:p-8">
@@ -253,7 +254,8 @@ export default function ManageSubscription({
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  {item.amount && <p className="text-xs font-black text-slate-700">{formatMoney(item.amount)}</p>}
+                  {/* ✅ FIXED: Safe null handling */}
+                  {item.amount != null && <p className="text-xs font-black text-slate-700">{formatMoney(item.amount)}</p>}
                   {item.mpesa_receipt && <p className="text-[10px] font-mono text-emerald-600">{item.mpesa_receipt}</p>}
                 </div>
               </div>
