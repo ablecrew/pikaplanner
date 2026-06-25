@@ -79,6 +79,7 @@ export async function fetchSubscriptionData(userId: string) {
  * NOTE: We don't query PayHero API directly because their query endpoint
  * is not available. The webhook is the primary method for status updates.
  */
+// ── Status Polling (after payment) ────────────────────────
 export async function checkSubscriptionStatusAction(
   subscriptionId: string,
   tier: string,
@@ -86,59 +87,26 @@ export async function checkSubscriptionStatusAction(
 ): Promise<{ active: boolean; failed: boolean; subscription: Subscription | null }> {
   const supabase = await createClient()
 
-  // 1. Check database for subscription status
+  // Check database for subscription status
   const table = isVendor ? 'vendor_subscriptions' : 'subscriptions'
-  const { data: sub, error: subError } = await supabase
+  const { data: sub } = await supabase
     .from(table)
     .select('*')
     .eq('id', subscriptionId)
     .maybeSingle()
 
-  if (subError) {
-    console.error('[checkSubscriptionStatus] DB error:', subError)
-  }
-
   if (!sub) {
     return { active: false, failed: false, subscription: null }
   }
 
-  // 2. If already active, return immediately
+  // If already active, return immediately
   if (sub.status === 'active') {
     return { active: true, failed: false, subscription: sub as Subscription }
   }
 
-  // 3. If failed, return immediately
+  // If failed, return immediately
   if (sub.status === 'failed') {
     return { active: false, failed: true, subscription: sub as Subscription }
-  }
-
-  // 4. If pending, check if transaction was updated by webhook
-  if (sub.status === 'pending') {
-    const { data: txn } = await supabase
-      .from('transactions')
-      .select('status, mpesa_receipt')
-      .eq('related_id', sub.id)
-      .eq('purpose', isVendor ? 'vendor_subscription' : 'subscription')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    // If webhook updated the transaction to success, subscription should be active too
-    if (txn?.status === 'success') {
-      // Webhook should have activated the subscription, but just in case:
-      await supabase
-        .from(table)
-        .update({ status: 'active' })
-        .eq('id', subscriptionId)
-      
-      const { data: updated } = await supabase
-        .from(table)
-        .select('*')
-        .eq('id', subscriptionId)
-        .single()
-      
-      return { active: true, failed: false, subscription: updated as Subscription }
-    }
   }
 
   // Still pending
