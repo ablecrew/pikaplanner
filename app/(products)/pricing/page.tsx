@@ -6,28 +6,28 @@ import Footer from '@/components/footer/Footer'
 const plans = [
   { 
     name: "Daily", 
-    price: "17 KES", 
+    price: "21 KES", 
     frequency: "daily",
     popular: false,
     gradient: "from-slate-600 to-slate-800",
   },
   { 
     name: "Weekly", 
-    price: "55 KES", 
+    price: "67 KES", 
     frequency: "weekly",
     popular: true,
     gradient: "from-[#32CD32] to-[#1A5C3A]",
   },
   { 
     name: "Monthly", 
-    price: "199 KES", 
+    price: "217 KES", 
     frequency: "monthly",
     popular: false,
     gradient: "from-[#F4A535] to-[#f97316]",
   },
   { 
     name: "Annual", 
-    price: "2200 KES", 
+    price: "2500 KES", 
     frequency: "annual",
     popular: false,
     gradient: "from-[#1A5C3A] to-[#0a2d1d]",

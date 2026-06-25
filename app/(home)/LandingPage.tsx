@@ -263,17 +263,17 @@ function TestimonialCard({ t, featured = false }: { t: (typeof TESTIMONIALS)[0];
 }
 
 const PLANS = [
-  { tier: 'Free', price: 0, period: 'The first 24 hour of regstration', features: ['3 meals', 'Basic recipes', 'Shopping list'], highlight: false },
+  { tier: 'Daily', price: 21, period: '/day', features: ['3 meals', 'Basic recipes', 'Shopping list'], highlight: false },
   {
     tier: 'Weekly',
-    price: 55,
+    price: 67,
     period: '/week',
     features: ['Full week plan', 'All cuisines', 'AI suggestions', 'Vendor ordering'],
     highlight: true,
   },
   {
     tier: 'Monthly',
-    price: 199,
+    price: 217,
     period: '/month',
     features: ['Full month plan', 'Priority support', 'Advanced analytics', 'All features'],
     highlight: false,
@@ -433,8 +433,8 @@ export default function LandingPage({
 
                 <div className="grid grid-cols-2 gap-2.5 mt-3">
                   {[
-                    { icon: Users, label: 'Happy Users', value: '10K+', color: '#1A5C3A', bg: '#D1FAE5' },
-                    { icon: BarChart3, label: 'Meals Planned', value: '50K+', color: '#1E40AF', bg: '#DBEAFE' },
+                    { icon: Users, label: 'Happy Users', value: '8+', color: '#1A5C3A', bg: '#D1FAE5' },
+                    { icon: BarChart3, label: 'Meals Planned', value: '7+', color: '#1E40AF', bg: '#DBEAFE' },
                     { icon: TrendingUp, label: 'Avg. Savings', value: 'KES 2K/mo', color: '#D97706', bg: '#FEF3C7' },
                     { icon: Star, label: 'Rating', value: '4.9', color: '#7C3AED', bg: '#EDE9FE' },
                   ].map((stat) => (
@@ -800,14 +800,14 @@ export default function LandingPage({
                       plan.highlight ? 'bg-gradient-to-r from-[#F4A535] to-[#e8921f] text-white' : 'bg-gray-100 text-gray-600'
                     }`}
                   >
-                    {plan.price === 0 ? 'Start for Free' : `Get ${plan.tier} Plan`}
+                    {plan.price === 0 ? 'Start with Ksh. 21' : `Get ${plan.tier} Plan`}
                   </Link>
                 </div>
               ))}
             </div>
 
             <p className="text-center mt-6 font-poppins text-[13px] text-gray-400">
-              Yearly plan available at KES 2,200 — save 33% vs monthly • <Link href="/pricing" className="text-[#1A5C3A] font-semibold">See all plans →</Link>
+              Yearly plan available at KES 2,500 — save 33% vs monthly • <Link href="/pricing" className="text-[#1A5C3A] font-semibold">See all plans →</Link>
             </p>
           </div>
         </section>

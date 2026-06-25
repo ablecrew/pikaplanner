@@ -68,76 +68,99 @@ export async function fetchSubscriptionData(userId: string) {
 }
 
 // ── Status Polling (after payment) ────────────────────────
+// ── Status Polling (after payment) ────────────────────────
 export async function checkSubscriptionStatusAction(
-  subscriptionId: string,  // ✅ Changed from userId to subscriptionId
+  subscriptionId: string,
   tier: string,
   isVendor: boolean
 ): Promise<{ active: boolean; failed: boolean; subscription: Subscription | null }> {
   const supabase = await createClient()
 
-  // 1. Check DB first — query by subscription ID directly
+  console.log('[checkSubscriptionStatus] Called with:', { subscriptionId, tier, isVendor })
+
+  // 1. Check DB first
   const table = isVendor ? 'vendor_subscriptions' : 'subscriptions'
-  const { data: sub } = await supabase
+  const { data: sub, error: subError } = await supabase
     .from(table)
     .select('*')
-    .eq('id', subscriptionId)  // ✅ Query by ID, not user_id + tier
+    .eq('id', subscriptionId)
     .maybeSingle()
+
+  console.log('[checkSubscriptionStatus] Subscription from DB:', { 
+    id: sub?.id,
+    status: sub?.status, 
+    expires_at: sub?.expires_at,
+    error: subError 
+  })
 
   if (!sub) {
     console.log('[checkSubscriptionStatus] No subscription found:', subscriptionId)
     return { active: false, failed: false, subscription: null }
   }
 
-  // 2. If already active, return immediately
+  // 2. If already active
   if (sub.status === 'active') {
     console.log('[checkSubscriptionStatus] Subscription already active:', subscriptionId)
     return { active: true, failed: false, subscription: sub as Subscription }
   }
 
-  // 3. If failed, return immediately
+  // 3. If failed
   if (sub.status === 'failed') {
     console.log('[checkSubscriptionStatus] Subscription failed:', subscriptionId)
     return { active: false, failed: true, subscription: sub as Subscription }
   }
 
-  // 4. If still pending — query Payhero directly to check payment status
+  // 4. If pending — query Payhero
   if (sub.status === 'pending') {
-    console.log('[checkSubscriptionStatus] Subscription pending, checking Payhero...', subscriptionId)
+    console.log('[checkSubscriptionStatus] Subscription pending, looking for transaction...')
     
-    const { data: txn } = await supabase
+    const { data: txn, error: txnError } = await supabase
       .from('transactions')
-      .select('payhero_reference, id')
-      .eq('related_id', sub.id)  // ✅ Match subscription ID
+      .select('payhero_reference, id, status, reference')
+      .eq('related_id', sub.id)
       .eq('purpose', isVendor ? 'vendor_subscription' : 'subscription')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
+    console.log('[checkSubscriptionStatus] Transaction found:', { 
+      id: txn?.id,
+      reference: txn?.reference,
+      payhero_reference: txn?.payhero_reference, 
+      status: txn?.status,
+      error: txnError 
+    })
+
     if (txn?.payhero_reference) {
       try {
-        const payheroRes = await fetch('https://api.payhero.co.ke/api/v2/query', {
+        console.log('[checkSubscriptionStatus] Querying Payhero API...', txn.payhero_reference)
+        console.log('[checkSubscriptionStatus] API Key exists:', !!process.env.PAYHERO_API_KEY)
+        
+        const payheroRes = await fetch('https://backend.payhero.co.ke/api/v2/query', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${process.env.PAYHERO_API_KEY}`,
+            Authorization: `Basic ${process.env.PAYHERO_API_KEY}`,
           },
           body: JSON.stringify({ CheckoutRequestID: txn.payhero_reference }),
         })
 
+        console.log('[checkSubscriptionStatus] Payhero HTTP status:', payheroRes.status)
+
         const result = await payheroRes.json()
-        console.log('[checkSubscriptionStatus] Payhero response:', result)
+        console.log('[checkSubscriptionStatus] Payhero full response:', JSON.stringify(result, null, 2))
 
         const isSuccess = result.ResultCode === 0 || result.Status === 'Success'
+        console.log('[checkSubscriptionStatus] Is success?', isSuccess, 'ResultCode:', result.ResultCode, 'Status:', result.Status)
 
         if (isSuccess) {
-          console.log('[checkSubscriptionStatus] Payment successful, activating subscription:', subscriptionId)
+          console.log('[checkSubscriptionStatus] Payment successful! Activating subscription...')
 
-          // Manually activate — callback was missed
           const now = new Date()
           const durationDays = isVendor ? 30 : (tier === 'daily' ? 1 : tier === 'weekly' ? 7 : tier === 'monthly' ? 30 : 365)
           const expiresAt = new Date(now.getTime() + durationDays * 86400000)
 
-          await supabase
+          const { error: updateSubError } = await supabase
             .from(table)
             .update({
               status: 'active',
@@ -147,7 +170,9 @@ export async function checkSubscriptionStatusAction(
             })
             .eq('id', sub.id)
 
-          await supabase
+          console.log('[checkSubscriptionStatus] Subscription update error:', updateSubError)
+
+          const { error: updateTxnError } = await supabase
             .from('transactions')
             .update({
               status: 'success',
@@ -157,22 +182,24 @@ export async function checkSubscriptionStatusAction(
             })
             .eq('id', txn.id)
 
+          console.log('[checkSubscriptionStatus] Transaction update error:', updateTxnError)
+
           const { data: updated } = await supabase
             .from(table)
             .select('*')
             .eq('id', sub.id)
             .single()
 
-          console.log('[checkSubscriptionStatus] Subscription activated:', subscriptionId)
+          console.log('[checkSubscriptionStatus] Subscription activated successfully!')
           return { active: true, failed: false, subscription: updated as Subscription }
         } else {
-          console.log('[checkSubscriptionStatus] Payhero payment not yet successful:', result)
+          console.log('[checkSubscriptionStatus] Payhero payment not yet successful. ResultCode:', result.ResultCode, 'ResultDesc:', result.ResultDesc)
         }
       } catch (err) {
         console.error('[checkSubscriptionStatus] Payhero query failed:', err)
       }
     } else {
-      console.log('[checkSubscriptionStatus] No transaction found for subscription:', subscriptionId)
+      console.log('[checkSubscriptionStatus] No payhero_reference found for transaction')
     }
   }
 

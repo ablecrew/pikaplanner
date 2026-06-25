@@ -29,7 +29,7 @@ type SubscriptionPlan = {
 
 const MEAL_PLANS: SubscriptionPlan[] = [
   {
-    tier: 'daily', display_name: 'Daily', price_kes: 17, duration_days: 1, popular: false,
+    tier: 'daily', display_name: 'Daily', price_kes: 21, duration_days: 1, popular: false,
     features: [
       'AI meal suggestions for the day',
       'Smart shopping list generation',
@@ -39,7 +39,7 @@ const MEAL_PLANS: SubscriptionPlan[] = [
     ],
   },
   {
-    tier: 'weekly', display_name: 'Weekly', price_kes: 55, duration_days: 7, popular: true,
+    tier: 'weekly', display_name: 'Weekly', price_kes: 67, duration_days: 7, popular: true,
     features: [
       'Everything in Daily, plus:',
       'Full 7-day weekly menu plan',
@@ -50,7 +50,7 @@ const MEAL_PLANS: SubscriptionPlan[] = [
     ],
   },
   {
-    tier: 'monthly', display_name: 'Monthly', price_kes: 199, duration_days: 30, popular: false,
+    tier: 'monthly', display_name: 'Monthly', price_kes: 217, duration_days: 30, popular: false,
     features: [
       'Everything in Weekly, plus:',
       'Full 30-day meal planning',
@@ -62,7 +62,7 @@ const MEAL_PLANS: SubscriptionPlan[] = [
     ],
   },
   {
-    tier: 'yearly', display_name: 'Yearly', price_kes: 2200, duration_days: 365, popular: false,
+    tier: 'yearly', display_name: 'Yearly', price_kes: 2500, duration_days: 365, popular: false,
     features: [
       'Everything in Monthly, plus:',
       'Best value — save KES 388/year',

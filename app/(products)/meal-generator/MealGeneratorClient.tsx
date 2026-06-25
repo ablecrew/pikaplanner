@@ -124,10 +124,10 @@ const GATE_FEATURES = [
 ]
 
 const GATE_PLANS = [
-  { tier: 'daily',   label: 'Daily',   price: 17,    duration: 'per day',   popular: false },
-  { tier: 'weekly',  label: 'Weekly',  price: 55,    duration: 'per week',  popular: true },
-  { tier: 'monthly', label: 'Monthly', price: 199,   duration: 'per month', popular: false },
-  { tier: 'yearly',  label: 'Yearly',  price: 2200,  duration: 'per year',  popular: false },
+  { tier: 'daily',   label: 'Daily',   price: 21,    duration: 'per day',   popular: false },
+  { tier: 'weekly',  label: 'Weekly',  price: 67,    duration: 'per week',  popular: true },
+  { tier: 'monthly', label: 'Monthly', price: 217,   duration: 'per month', popular: false },
+  { tier: 'yearly',  label: 'Yearly',  price: 2500,  duration: 'per year',  popular: false },
 ]
 
 function SubscriptionGate({ subscription }: { subscription: SubscriptionInfo }) {
@@ -158,7 +158,7 @@ function SubscriptionGate({ subscription }: { subscription: SubscriptionInfo }) 
               className="inline-flex items-center gap-2 rounded-2xl bg-[#f97316] hover:bg-[#ea580c] px-7 py-4 text-sm font-black uppercase text-white shadow-lg hover:shadow-xl transition hover:-translate-y-0.5"
             >
               <Sparkles size={16} />
-              {isExpired ? 'Renew Subscription' : 'Start From KES 17/day'}
+              {isExpired ? 'Renew Subscription' : 'Start From KES 21/day'}
               <ArrowRight size={16} />
             </Link>
           </div>

@@ -62,11 +62,11 @@ export async function checkTransactionStatus(transactionId: string) {
 
 async function queryPayheroTransaction(checkoutRequestId: string) {
   try {
-    const res = await fetch('https://api.payhero.co.ke/api/v2/query', {
+    const res = await fetch('https://backend.payhero.co.ke/api/v2/query', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.PAYHERO_API_KEY}`,
+        'Authorization': `Basic ${process.env.PAYHERO_API_KEY}`,
       },
       body: JSON.stringify({ CheckoutRequestID: checkoutRequestId }),
     })

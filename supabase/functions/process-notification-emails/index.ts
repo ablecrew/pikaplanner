@@ -29,8 +29,8 @@ serve(async (req: Request) => {
       .eq('is_read', false)
       .is('read_at', null)
       .limit(100)
-      .order('created_at', { ascending: true })
-
+      .order('sent_at', { ascending: true, nullsFirst: true })
+      
     if (fetchError) throw fetchError
 
     if (!pending?.length) {
@@ -65,7 +65,7 @@ serve(async (req: Request) => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            from: 'PikaPlan <noreply@pikaplan.com>',
+            from: 'PikaPlan <onboarding@resend.dev>',
             to: [email],
             subject: emailContent.subject,
             html: emailContent.html,

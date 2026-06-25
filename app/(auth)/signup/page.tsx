@@ -111,13 +111,13 @@ export default function SignupPage() {
           </button>
         </div>
 
-        {/* Free trial info for users */}
+        {/* Free trial info for users 
         {role === 'user' && (
           <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800">
             <p className="font-semibold mb-1">🎁 Free 1-Day Trial</p>
             <p>You get a free daily meal plan for your first day. After that, subscribe for just KES 17/day, KES 55/week, KES 199/month, or KES 2,200/year.</p>
           </div>
-        )}
+        )}*/}
 
         {/* Freemium info for vendors */}
         {role === 'vendor' && (
