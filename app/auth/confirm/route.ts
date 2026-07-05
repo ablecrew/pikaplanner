@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     if (!error) {
       // ✅ Password recovery → Redirect to reset password page
       if (type === 'recovery') {
-        return NextResponse.redirect(`${origin}/auth/reset-password`)
+        return NextResponse.redirect(`${origin}/reset-password`)
       }
 
       // ✅ Email signup confirmation → Redirect to login or dashboard
