@@ -236,6 +236,7 @@ export default function UserSubscriptionClient({
   const [phoneNumber, setPhoneNumber] = useState('')
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null)
   const [billingType, setBillingType] = useState<BillingType>('auto-renew')
+  const [currentSubscriptionId, setCurrentSubscriptionId] = useState<string | null>(null)
 
   // Polling state
   const [polling, setPolling] = useState(false)
@@ -319,17 +320,21 @@ export default function UserSubscriptionClient({
     return data
   }, [userId])
 
-  // ── Start polling (FIXED: now accepts subscriptionId) ──
+  // ── Start polling (FIXED: checks both subscription AND transaction status) ──
   const startPolling = useCallback((
     plan: SubscriptionPlan,
     isVendor: boolean,
-    subscriptionId: string
+    subscriptionId: string,
+    transactionId: string
   ) => {
-    console.log('[startPolling] Starting with subscriptionId:', subscriptionId)
+    console.log('[startPolling] Starting polling...', { subscriptionId, transactionId, tier: plan.tier })
+    
+    // Store the current subscription ID for this payment session
+    setCurrentSubscriptionId(subscriptionId)
     
     setPolling(true)
     setPollAttempts(0)
-    setPollMessage('Waiting for M-Pesa payment confirmation...')
+    setPollMessage('Please check your phone and enter your M-Pesa PIN...')
 
     let attempts = 0
 
@@ -337,6 +342,7 @@ export default function UserSubscriptionClient({
       attempts++
       setPollAttempts(attempts)
 
+      // Update polling messages
       if (attempts <= 5) {
         setPollMessage('Please check your phone and enter your M-Pesa PIN...')
       } else if (attempts <= 15) {
@@ -348,18 +354,20 @@ export default function UserSubscriptionClient({
       }
 
       try {
-        console.log('[startPolling] Calling checkSubscriptionStatusAction with:', { subscriptionId, tier: plan.tier })
+        console.log('[startPolling] Attempt', attempts, '- Checking subscription status...')
         
+        // Check subscription status (primary method - matches webhook update path)
         const status = await checkSubscriptionStatusAction(
           subscriptionId,
           plan.tier,
           isVendor
         )
 
-        console.log('[startPolling] Status result:', status)
+        console.log('[startPolling] Subscription status result:', status)
 
+        // ✅ SUCCESS: Subscription is active (webhook updated it)
         if (status.active) {
-          console.log('[startPolling] Subscription active! Redirecting...')
+          console.log('[startPolling] ✅ Subscription active! Redirecting...')
           
           clearInterval(poll)
           if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -381,7 +389,9 @@ export default function UserSubscriptionClient({
           return
         }
 
+        // ✅ FAILED: Payment failed
         if (status.failed) {
+          console.log('[startPolling] ❌ Subscription failed')
           clearInterval(poll)
           if (timeoutRef.current) clearTimeout(timeoutRef.current)
           intervalRef.current = null
@@ -391,11 +401,17 @@ export default function UserSubscriptionClient({
           setError('Payment was not completed. Please try again.')
           return
         }
+
+        // ⏳ Still pending - continue polling
+        console.log('[startPolling] ⏳ Still pending, continuing to poll...')
+
       } catch (err) {
         console.error('[startPolling] Polling error:', err)
       }
 
+      // Max attempts reached
       if (attempts >= MAX_POLL_ATTEMPTS) {
+        console.log('[startPolling] ⏰ Max polling attempts reached')
         clearInterval(poll)
         if (timeoutRef.current) clearTimeout(timeoutRef.current)
         intervalRef.current = null
@@ -411,6 +427,7 @@ export default function UserSubscriptionClient({
 
     intervalRef.current = poll
 
+    // Timeout after 5 minutes
     timeoutRef.current = setTimeout(() => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
@@ -426,11 +443,17 @@ export default function UserSubscriptionClient({
 
   // Manual refresh during polling
   const handleManualRefresh = useCallback(async () => {
+    console.log('[handleManualRefresh] Manual refresh triggered')
     const data = await refreshData()
+    
     if (data?.subscription && data.subscription.status === 'active') {
+      console.log('[handleManualRefresh] ✅ Subscription is active!')
       stopPolling()
       setSuccess('✅ Your subscription is active! Redirecting to meal planner...')
       redirectToMealGenerator(1500)
+    } else {
+      console.log('[handleManualRefresh] ⏳ Subscription still pending:', data?.subscription?.status)
+      setPollMessage('Checking... Please wait.')
     }
   }, [refreshData, stopPolling, redirectToMealGenerator])
 
@@ -444,7 +467,7 @@ export default function UserSubscriptionClient({
     [profile]
   )
 
-  // ── Handle Payment (FIXED: passes subscriptionId to startPolling) ──
+  // ── Handle Payment (FIXED: passes both subscriptionId and transactionId) ──
   const handlePayment = useCallback(async () => {
     if (!selectedPlan || !phoneNumber.trim() || !userId) return
     setProcessing(true)
@@ -455,7 +478,11 @@ export default function UserSubscriptionClient({
       const isVendor =
         typeof window !== 'undefined' && window.location.pathname.includes('/vendor/')
 
-      console.log('[handlePayment] Initiating payment...', { tier: selectedPlan.tier, amount: selectedPlan.price_kes })
+      console.log('[handlePayment] Initiating payment...', { 
+        tier: selectedPlan.tier, 
+        amount: selectedPlan.price_kes,
+        phone: phoneNumber 
+      })
 
       const result = await initiateSubscriptionPaymentAction({
         tier: selectedPlan.tier,
@@ -466,7 +493,7 @@ export default function UserSubscriptionClient({
         isVendor,
       })
 
-      console.log('[handlePayment] Result:', result)
+      console.log('[handlePayment] Payment initiated:', result)
 
       if (!result.success) {
         throw new Error(result.error)
@@ -476,8 +503,18 @@ export default function UserSubscriptionClient({
       setShowMpesaInput(false)
       setProcessing(false)
 
-      console.log('[handlePayment] Starting polling with subscriptionId:', result.subscriptionId)
-      startPolling(selectedPlan, isVendor, result.subscriptionId)
+      // ✅ Start polling with BOTH IDs
+      console.log('[handlePayment] Starting polling...', { 
+        subscriptionId: result.subscriptionId,
+        transactionId: result.reference 
+      })
+      
+      startPolling(
+        selectedPlan, 
+        isVendor, 
+        result.subscriptionId,
+        result.reference
+      )
     } catch (err: any) {
       console.error('[handlePayment] Error:', err)
       setError(err.message || 'Payment failed')

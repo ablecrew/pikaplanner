@@ -1,7 +1,8 @@
-// app/api/payhero/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { PayheroCallback } from '@/lib/payhero/types'
 
+// ⚠️ Use SERVICE ROLE client for webhook — it bypasses RLS
 function getServiceClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,12 +13,12 @@ function getServiceClient() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    console.log('[PayHero Webhook] Received:', JSON.stringify(body, null, 2))
+    const body = (await req.json()) as PayheroCallback
+    console.log('[Payhero Callback] Received webhook:', JSON.stringify(body, null, 2))
 
     const r = body?.response
     if (!r) {
-      console.error('[PayHero Webhook] Invalid payload')
+      console.error('[Payhero Callback] Invalid payload - no response object')
       return NextResponse.json({ error: 'Invalid payload' }, { status: 400 })
     }
 
@@ -25,39 +26,66 @@ export async function POST(req: NextRequest) {
     const externalRef = r.ExternalReference
     const checkoutId = r.CheckoutRequestID
 
-    console.log('[PayHero Webhook] Looking for transaction...', { externalRef, checkoutId })
+    console.log('[Payhero Callback] Looking for transaction...', { externalRef, checkoutId })
+
+    if (!externalRef && !checkoutId) {
+      console.error('[Payhero Callback] No reference found in payload')
+      return NextResponse.json({ error: 'No reference found' }, { status: 400 })
+    }
 
     // Find transaction
-    let { data: txn } = await supabase
+    let { data: txn, error: txnError } = await supabase
       .from('transactions')
       .select('*')
       .eq('reference', externalRef ?? '')
       .maybeSingle()
 
+    if (txnError) {
+      console.error('[Payhero Callback] Error finding transaction by reference:', txnError)
+    }
+
     if (!txn && checkoutId) {
-      const { data: byCheckout } = await supabase
+      const { data: byCheckout, error: checkoutError } = await supabase
         .from('transactions')
         .select('*')
         .eq('payhero_reference', checkoutId)
         .maybeSingle()
+      
+      if (checkoutError) {
+        console.error('[Payhero Callback] Error finding transaction by checkout ID:', checkoutError)
+      }
+      
       txn = byCheckout
     }
 
     if (!txn) {
-      console.error('[PayHero Webhook] Transaction not found')
+      console.error('[Payhero Callback] Transaction not found:', { externalRef, checkoutId })
       return NextResponse.json({ error: 'Transaction not found' }, { status: 404 })
     }
 
-    console.log('[PayHero Webhook] Found transaction:', txn.id, 'Purpose:', txn.purpose, 'Related ID:', txn.related_id)
+    console.log('[Payhero Callback] Found transaction:', {
+      id: txn.id,
+      reference: txn.reference,
+      purpose: txn.purpose,
+      related_id: txn.related_id,
+      current_status: txn.status,
+    })
 
     // Determine status
     const isSuccess = r.ResultCode === 0 || r.Status === 'Success'
-    const newStatus = isSuccess ? 'success' : 'failed'
+    const isCancelled = /cancel|user cancel/i.test(r.ResultDesc ?? '') || r.ResultCode === 1032
+    const newStatus = isSuccess ? 'success' : isCancelled ? 'cancelled' : 'failed'
 
-    console.log('[PayHero Webhook] Payment status:', newStatus, 'ResultCode:', r.ResultCode)
+    console.log('[Payhero Callback] Payment result:', {
+      isSuccess,
+      isCancelled,
+      newStatus,
+      ResultCode: r.ResultCode,
+      ResultDesc: r.ResultDesc,
+    })
 
     // Update transaction
-    await supabase
+    const { error: updateErr } = await supabase
       .from('transactions')
       .update({
         status: newStatus,
@@ -68,56 +96,352 @@ export async function POST(req: NextRequest) {
       })
       .eq('id', txn.id)
 
-    // ✅ CRITICAL: Activate subscription if payment successful
-    if (isSuccess && txn.purpose === 'subscription' && txn.related_id) {
-      console.log('[PayHero Webhook] Activating subscription:', txn.related_id)
+    if (updateErr) {
+      console.error('[Payhero Callback] Failed to update transaction:', updateErr)
+      return NextResponse.json({ error: 'DB update failed' }, { status: 500 })
+    }
 
-      const metadata = txn.metadata ?? {}
+    console.log('[Payhero Callback] Transaction updated successfully')
+
+    const metadata = txn.metadata ?? {}
+
+    // RENEWAL HANDLING (priority — check first)
+    if (metadata.isRenewal && metadata.renewalId) {
+      console.log('[Payhero Callback] Processing renewal...', { renewalId: metadata.renewalId })
+      await handleRenewal(supabase, txn, metadata, isSuccess, isCancelled, r)
+      return NextResponse.json({ received: true, kind: 'renewal' })
+    }
+
+    // ── Regular fulfillment ──
+    if (isSuccess) {
+      console.log('[Payhero Callback] Processing successful payment...')
+      await handleSuccessfulPayment(supabase, txn)
+    } else {
+      console.log('[Payhero Callback] Processing failed payment...')
+      await handleFailedPayment(supabase, txn, r.ResultDesc ?? 'Payment failed')
+    }
+
+    console.log('[Payhero Callback] Webhook completed successfully')
+    return NextResponse.json({ received: true })
+  } catch (err) {
+    console.error('[Payhero Callback] Fatal error:', err)
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+  }
+}
+
+// ════════════════════════════════════════════════════════
+// HANDLERS
+// ════════════════════════════════════════════════════════
+
+// ── Renewal Handler ───────────────────────────────────
+async function handleRenewal(
+  supabase: any,
+  txn: any,
+  metadata: any,
+  isSuccess: boolean,
+  isCancelled: boolean,
+  r: any
+) {
+  const { renewalId, subscriptionId } = metadata
+
+  const { error: renewalErr } = await supabase
+    .from('subscription_renewals')
+    .update({
+      status: isSuccess ? 'success' : isCancelled ? 'user_cancelled' : 'failed',
+      amount: txn.amount,
+      payhero_reference: r.CheckoutRequestID ?? null,
+      mpesa_receipt: r.MpesaReceiptNumber ?? null,
+      failure_reason: !isSuccess ? r.ResultDesc ?? 'Unknown error' : null,
+    })
+    .eq('id', renewalId)
+
+  if (renewalErr) {
+    console.error('[Payhero Callback] Failed to update renewal:', renewalErr)
+  }
+
+  if (isSuccess) {
+    const { data: sub, error: subErr } = await supabase
+      .from('subscriptions')
+      .select('expires_at, tier')
+      .eq('id', subscriptionId)
+      .single()
+
+    if (subErr) {
+      console.error('[Payhero Callback] Failed to fetch subscription for renewal:', subErr)
+      return
+    }
+
+    if (sub) {
+      const planDays =
+        sub.tier === 'daily' ? 1 :
+        sub.tier === 'weekly' ? 7 :
+        sub.tier === 'monthly' ? 30 : 365
+
+      const currentExpiry = new Date(sub.expires_at)
+      const newExpiry = new Date(currentExpiry.getTime() + planDays * 24 * 60 * 60 * 1000)
+      const newRenewalAt = new Date(newExpiry.getTime() - 24 * 60 * 60 * 1000)
+
+      const { error: updateErr } = await supabase
+        .from('subscriptions')
+        .update({
+          expires_at: newExpiry.toISOString(),
+          next_renewal_at: newRenewalAt.toISOString(),
+          renewal_attempts: 0,
+          status: 'active',
+          grace_period_ends_at: null,
+        })
+        .eq('id', subscriptionId)
+
+      if (updateErr) {
+        console.error('[Payhero Callback] Failed to activate renewed subscription:', updateErr)
+      } else {
+        console.log('[Payhero Callback] ✅ Renewal subscription activated:', subscriptionId)
+      }
+
+      if (txn.user_id) {
+        await supabase.from('notification_logs').insert({
+          user_id: txn.user_id,
+          title: 'Subscription Renewed! 🎉',
+          body: `Your ${sub.tier} plan has been renewed for ${planDays} more days. M-Pesa receipt: ${r.MpesaReceiptNumber}`,
+          metadata: { type: 'subscription_renewal', subscriptionId, renewalId },
+        })
+      }
+    }
+  } else {
+    // Failed renewal → 3-day grace period
+    const gracePeriodEnd = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString()
+
+    const { error: graceErr } = await supabase
+      .from('subscriptions')
+      .update({
+        grace_period_ends_at: gracePeriodEnd,
+        last_renewal_attempt_at: new Date().toISOString(),
+      })
+      .eq('id', subscriptionId)
+
+    if (graceErr) {
+      console.error('[Payhero Callback] Failed to set grace period:', graceErr)
+    }
+
+    if (txn.user_id) {
+      await supabase.from('notification_logs').insert({
+        user_id: txn.user_id,
+        title: '⚠️ Subscription Renewal Failed',
+        body: isCancelled
+          ? `You cancelled the M-Pesa prompt. We'll try again later. Renew manually anytime.`
+          : `Renewal failed: ${r.ResultDesc ?? 'Please try again'}. You have 3 days to renew before your plan expires.`,
+        metadata: { type: 'renewal_failed', subscriptionId, renewalId },
+      })
+    }
+  }
+}
+
+// ── Successful Payment Handler ──────────────────────────
+async function handleSuccessfulPayment(supabase: any, txn: any) {
+  console.log('[Payhero] Payment successful:', txn.reference, 'purpose:', txn.purpose, 'related_id:', txn.related_id)
+
+  const metadata = txn.metadata ?? {}
+
+  switch (txn.purpose) {
+    case 'meal_order':
+      if (txn.related_id) {
+        const { error: orderErr } = await supabase
+          .from('orders')
+          .update({ status: 'paid', paid_at: new Date().toISOString() })
+          .eq('id', txn.related_id)
+        
+        if (orderErr) {
+          console.error('[Payhero] Failed to update order:', orderErr)
+        } else {
+          console.log('[Payhero] ✅ Order updated:', txn.related_id)
+        }
+      }
+      break
+
+    // SUBSCRIPTION ACTIVATION (with auto-renew setup)
+    case 'subscription': {
+      if (!txn.related_id) {
+        console.warn('[Payhero] Subscription payment without related_id, skipping activation')
+        break
+      }
+
+      console.log('[Payhero] Activating subscription:', txn.related_id)
+
+      const tier = metadata.tier ?? 'monthly'
       const durationDays = metadata.durationDays ?? 30
+      const billingType = metadata.billingType ?? 'one-time'
+      const phoneToSave = metadata.phoneToSave
 
       const now = new Date()
       const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
+      const nextRenewalAt = billingType === 'auto-renew'
+        ? new Date(expiresAt.getTime() - 24 * 60 * 60 * 1000).toISOString()
+        : null
 
-      // Update subscription to active
-      const { error: subError } = await supabase
+      // Activate the pending subscription — this is the single source of truth
+      const { data: updatedSub, error: subErr } = await supabase
         .from('subscriptions')
         .update({
           status: 'active',
           starts_at: now.toISOString(),
           expires_at: expiresAt.toISOString(),
+          billing_type: billingType,
+          auto_renew: billingType === 'auto-renew',
+          auto_renew_phone: billingType === 'auto-renew' ? phoneToSave : null,
+          next_renewal_at: nextRenewalAt,
           amount_paid: txn.amount,
           updated_at: now.toISOString(),
         })
         .eq('id', txn.related_id)
+        .select()
+        .single()
 
-      if (subError) {
-        console.error('[PayHero Webhook] Failed to activate subscription:', subError)
+      if (subErr) {
+        console.error('[Payhero] ❌ FAILED to activate subscription:', txn.related_id, subErr)
       } else {
-        console.log('[PayHero Webhook] ✅ Subscription activated successfully')
+        console.log('[Payhero] ✅ SUCCESS - Subscription activated:', {
+          id: txn.related_id,
+          status: updatedSub?.status,
+          expires_at: updatedSub?.expires_at,
+        })
       }
+
+      break
     }
 
-    // Send notification
-    if (txn.user_id) {
-      await supabase.from('notification_logs').insert({
-        user_id: txn.user_id,
-        title: isSuccess ? 'Payment Successful! 🎉' : 'Payment Failed',
-        body: isSuccess 
-          ? `Your payment of KES ${txn.amount} was received. M-Pesa receipt: ${r.MpesaReceiptNumber ?? 'N/A'}`
-          : `Your payment of KES ${txn.amount} failed: ${r.ResultDesc ?? 'Unknown error'}`,
-        type: 'payment',
-        channel: 'in_app',
-        is_read: false,
-        sent_at: new Date().toISOString(),
-        metadata: { transaction_id: txn.id, reference: txn.reference },
-      })
+    // VENDOR SUBSCRIPTION
+    case 'vendor_subscription':
+    case 'vendor_listing': {
+      if (!txn.related_id) {
+        console.warn('[Payhero] Vendor subscription without related_id, skipping')
+        break
+      }
+
+      console.log('[Payhero] Activating vendor subscription:', txn.related_id)
+
+      const tier = metadata.tier ?? 'monthly'
+      const durationDays = metadata.durationDays ?? 30
+      const billingType = metadata.billingType ?? 'one-time'
+      const phoneToSave = metadata.phoneToSave
+
+      const now = new Date()
+      const expiresAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000)
+      const nextRenewalAt =
+        billingType === 'auto-renew'
+          ? new Date(expiresAt.getTime() - 24 * 60 * 60 * 1000).toISOString()
+          : null
+
+      // Activate pending vendor subscription
+      const { error: vendorSubErr } = await supabase
+        .from('vendor_subscriptions')
+        .update({
+          status: 'active',
+          starts_at: now.toISOString(),
+          expires_at: expiresAt.toISOString(),
+          billing_type: billingType,
+          auto_renew: billingType === 'auto-renew',
+          auto_renew_phone: billingType === 'auto-renew' ? phoneToSave : null,
+          next_renewal_at: nextRenewalAt,
+        })
+        .eq('id', txn.related_id)
+
+      if (vendorSubErr) {
+        console.error('[Payhero] ❌ FAILED to activate vendor subscription:', txn.related_id, vendorSubErr)
+      } else {
+        console.log('[Payhero] ✅ SUCCESS - Vendor subscription activated:', txn.related_id)
+      }
+
+      // Update vendor record
+      const { error: vendorErr } = await supabase
+        .from('vendors')
+        .update({
+          is_active: true,
+          subscription_tier: tier,
+          subscription_end_date: expiresAt.toISOString(),
+          subscription_paid_at: now.toISOString(),
+        })
+        .eq('id', txn.related_id)
+
+      if (vendorErr) {
+        console.error('[Payhero] Failed to update vendor record:', vendorErr)
+      } else {
+        console.log('[Payhero] ✅ Vendor record updated:', txn.related_id)
+      }
+
+      break
     }
 
-    console.log('[PayHero Webhook] ✅ Webhook completed successfully')
-    return NextResponse.json({ received: true })
-  } catch (err) {
-    console.error('[PayHero Webhook] Fatal error:', err)
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 })
+    case 'shopping_cart': {
+      if (!txn.related_id) {
+        console.warn('[Payhero] Shopping cart without related_id, skipping')
+        break
+      }
+      
+      console.log('[Payhero] Shopping cart paid:', txn.related_id)
+      // Mark all items in the shopping list as paid (we delete them in clearPaidItemsAction)
+      // Or you could mark them with a status flag here if you want history
+
+      // Optional: Create an order record for tracking
+      // await supabase.from('orders').insert({ ... })
+      break
+    }
+
+    default:
+      console.log('[Payhero] No handler for purpose:', txn.purpose)
+  }
+
+  // ── Send success notification ──
+  if (txn.user_id) {
+    const { error: notifErr } = await supabase.from('notification_logs').insert({
+      user_id: txn.user_id,
+      title: 'Payment Successful! 🎉',
+      body: `Your payment of KES ${txn.amount.toLocaleString()} was received. M-Pesa receipt: ${txn.mpesa_receipt ?? 'N/A'}`,
+      metadata: { type: 'payment', reference: txn.reference, transaction_id: txn.id },
+    })
+
+    if (notifErr) {
+      console.error('[Payhero] Failed to send notification:', notifErr)
+    }
+  }
+}
+
+// ── Failed Payment Handler ────────────────────────────
+async function handleFailedPayment(supabase: any, txn: any, reason: string) {
+  console.log('[Payhero] Payment failed:', txn.reference, 'reason:', reason)
+
+  const metadata = txn.metadata ?? {}
+
+  // Clean up pending subscriptions if payment failed
+  if (txn.related_id && (txn.purpose === 'subscription' || txn.purpose === 'vendor_subscription')) {
+    const table = txn.purpose === 'vendor_subscription' ? 'vendor_subscriptions' : 'subscriptions'
+    
+    console.log('[Payhero] Marking', table, 'as failed:', txn.related_id)
+    
+    const { error: failErr } = await supabase
+      .from(table)
+      .update({ status: 'failed' })
+      .eq('id', txn.related_id)
+      .eq('status', 'pending') // Only if still pending — don't disable an existing active sub
+
+    if (failErr) {
+      console.error('[Payhero] Failed to mark subscription as failed:', failErr)
+    } else {
+      console.log('[Payhero] ✅ Subscription marked as failed:', txn.related_id)
+    }
+  }
+
+  // Notify user
+  if (txn.user_id) {
+    const { error: notifErr } = await supabase.from('notification_logs').insert({
+      user_id: txn.user_id,
+      title: 'Payment Failed',
+      body: `Your payment of KES ${txn.amount.toLocaleString()} did not go through: ${reason}. Please try again.`,
+      metadata: { type: 'payment_failed', reference: txn.reference, transaction_id: txn.id },
+    })
+
+    if (notifErr) {
+      console.error('[Payhero] Failed to send failure notification:', notifErr)
+    }
   }
 }
 
@@ -125,7 +449,7 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    service: 'PayHero Webhook',
+    service: 'Payhero Webhook',
     timestamp: new Date().toISOString(),
   })
 }
