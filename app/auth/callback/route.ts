@@ -1,49 +1,64 @@
+// app/auth/callback/route.ts
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+
 function getSafeSignupRole(role: string | null) {
   if (role === 'vendor') return 'vendor'
   return 'user'
 }
+
 function getRedirectForRole(role?: string | null, onboardingComplete?: boolean | null) {
+  // Admin/Superadmin → Admin Dashboard
   if (role === 'admin' || role === 'superadmin') {
     return '/dashboard/admin/overview'
   }
+
+  // Vendor → Check onboarding
   if (role === 'vendor') {
-    // IMPORTANT: On first login, vendors should go to a specific signup/onboarding page
-    // where they can fill in required info like phone, city, etc.
-    // For now, we redirect to overview, but this should be improved.
-    return '/dashboard/vendor/overview'
+    return onboardingComplete ? '/dashboard/vendor/overview' : '/vendor-signup'
   }
-  if (!onboardingComplete) {
-    return '/onboarding'
+
+  // User → Check onboarding
+  if (role === 'user') {
+    return onboardingComplete ? '/dashboard/user/overview' : '/onboarding'
   }
-  return '/vendor-signup'
+
+  // Default fallback → User overview
+  return '/dashboard/user/overview'
 }
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   const requestedRole = searchParams.get('role')
   const signupRole = getSafeSignupRole(requestedRole)
+
   if (code) {
     const supabase = await createServerSupabaseClient()
     const { data: sessionData, error } = await supabase.auth.exchangeCodeForSession(code)
+
     if (error) {
       console.error('OAuth exchange error:', error.message)
       return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`)
     }
+
     if (sessionData?.user) {
       const user = sessionData.user
-      const fullName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'New Vendor'
+      const fullName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'New User'
+
       // Check for existing profile
       const { data: existingProfile } = await supabase
         .from('profiles')
         .select('id, role, onboarding_complete')
         .eq('id', user.id)
         .single()
+
       const isFirstLogin = !existingProfile
+
       if (isFirstLogin) {
         console.log(`First login for user ${user.id}, role: ${signupRole}`)
-        // STEP 1: Create the user's profile
+
+        // Create the user's profile
         const { error: profileError } = await supabase.from('profiles').insert({
           id: user.id,
           email: user.email,
@@ -52,26 +67,24 @@ export async function GET(request: Request) {
           is_active: true,
           onboarding_complete: false,
         })
+
         if (profileError) {
           console.error('Failed to create profile:', profileError)
           return NextResponse.redirect(`${origin}/login?error=profile_creation_failed`)
         }
-      } // ← END of isFirstLogin block
-      // ────────────────────────────────────────────────────────────────────
-      // STEP 2: Idempotent vendor row check (runs on EVERY login for vendors)
-      // This ensures vendor row exists even if:
-      // - They signed up before vendor-creation code was added
-      // - The first vendor insert failed silently
-      // - They were promoted to vendor by an admin after initial signup
-      // ────────────────────────────────────────────────────────────────────
+      }
+
+      // Idempotent vendor row check (runs on EVERY login for vendors)
       if (signupRole === 'vendor') {
         const { data: existingVendor } = await supabase
           .from('vendors')
           .select('id')
           .eq('profile_id', user.id)
           .maybeSingle()
+
         if (!existingVendor) {
           console.log(`Backfilling missing vendor row for ${user.id}`)
+
           const { error: vendorError } = await supabase.from('vendors').insert({
             profile_id: user.id,
             business_name: `${fullName}'s Kitchen`,
@@ -86,6 +99,7 @@ export async function GET(request: Request) {
             available_balance: 0,
             withdrawal_threshold: 500,
           })
+
           if (vendorError) {
             console.error('CRITICAL: Failed to backfill vendor record:', vendorError)
           } else {
@@ -93,56 +107,39 @@ export async function GET(request: Request) {
           }
         }
       }
-      // ────────────────────────────────────────────────────────────────────
-      // STEP 3: Send notifications (runs on every login)
-      // ────────────────────────────────────────────────────────────────────
+
+      // Send notifications
       try {
-        const displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Foodie'
+        const displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'
+
         await supabase.from('notification_logs').insert({
           user_id: user.id,
-          title: isFirstLogin
-            ? `🎉 Welcome to PikaPlan, ${displayName}!`
-            : `👋 Welcome back, ${displayName}!`,
+          title: isFirstLogin ? `🎉 Welcome to PikaPlan, ${displayName}!` : `👋 Welcome back, ${displayName}!`,
           body: isFirstLogin
-            ? 'Start exploring delicious meals, create your first meal plan, and discover local vendors. Your smart meal journey begins now!'
-            : "Ready to continue your meal planning journey? Check out what's new since your last visit.",
+            ? 'Start exploring delicious meals, create your first meal plan, and discover local vendors.'
+            : "Ready to continue your meal planning journey?",
           type: 'system',
           channel: 'in_app',
           is_read: false,
           sent_at: new Date().toISOString(),
           metadata: { trigger: 'login', first_login: isFirstLogin },
         })
-        // Queue email notification
-        await supabase.from('notification_logs').insert({
-          user_id: user.id,
-          title: isFirstLogin ? '🎉 Welcome to PikaPlan!' : '👋 Welcome back to PikaPlan!',
-          body: user.email,
-          type: 'system',
-          channel: 'email',
-          is_read: false,
-          sent_at: new Date().toISOString(),
-          metadata: {
-            trigger: 'login',
-            first_login: isFirstLogin,
-            email: user.email,
-            full_name: displayName,
-            pending: true,
-          },
-        })
       } catch (notifError) {
         console.error('Welcome notification failed:', notifError)
       }
-      // ────────────────────────────────────────────────────────────────────
-      // STEP 4: Fetch final profile state and redirect
-      // ────────────────────────────────────────────────────────────────────
+
+      // Fetch final profile state and redirect
       const { data: finalProfile } = await supabase
         .from('profiles')
         .select('role, onboarding_complete')
         .eq('id', user.id)
         .single()
+
       const redirectTo = getRedirectForRole(finalProfile?.role, finalProfile?.onboarding_complete)
+
       return NextResponse.redirect(`${origin}${redirectTo}`)
     }
   }
+
   return NextResponse.redirect(`${origin}/login?error=no_auth_code`)
 }

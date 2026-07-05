@@ -1,12 +1,12 @@
 'use server'
- 
+
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { z } from 'zod'
- 
+
 // ── Validation schemas ──────────────────────────────────────
- 
+
 const SignupSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters').max(100),
   email: z.string().email('Invalid email address').toLowerCase(),
@@ -18,18 +18,18 @@ const SignupSchema = z.object({
     .regex(/[a-z]/, 'Must contain at least one lowercase letter')
     .regex(/[0-9]/, 'Must contain at least one number')
     .regex(/[^A-Za-z0-9]/, 'Must contain at least one special character'),
-  role: z.enum(['user', 'vendor']).default('user'),
+  role: z.enum(['user', 'vendor', 'admin']).default('user'),
 })
- 
+
 const LoginSchema = z.object({
   email: z.string().email().toLowerCase(),
   password: z.string().min(1, 'Password is required'),
 })
- 
+
 const ResetPasswordSchema = z.object({
   email: z.string().email().toLowerCase(),
 })
- 
+
 const UpdatePasswordSchema = z.object({
   password: z
     .string()
@@ -39,18 +39,18 @@ const UpdatePasswordSchema = z.object({
     .regex(/[0-9]/)
     .regex(/[^A-Za-z0-9]/),
 })
- 
+
 // ── Types ───────────────────────────────────────────────────
- 
+
 type ActionResult = {
   success: boolean
   error?: string
   fieldErrors?: Record<string, string>
   data?: unknown
 }
- 
+
 // ── Sign Up ─────────────────────────────────────────────────
- 
+
 export async function signUpAction(formData: FormData): Promise<ActionResult> {
   const rawData = {
     fullName: formData.get('fullName'),
@@ -59,7 +59,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
     password: formData.get('password'),
     role: formData.get('role') || 'user',
   }
- 
+
   const result = SignupSchema.safeParse(rawData)
   if (!result.success) {
     const fieldErrors = result.error.flatten().fieldErrors
@@ -67,14 +67,14 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
     return {
       success: false,
       fieldErrors: Object.fromEntries(
-        Object.entries(fieldErrors).map(([k, v]) => [k, v?.[0] || "Invalid value"])
-      )
+        Object.entries(fieldErrors).map(([k, v]) => [k, v?.[0] || 'Invalid value'])
+      ),
     }
   }
- 
+
   const { email, password, fullName, role, phone } = result.data
   const supabase = await createServerSupabaseClient()
- 
+
   const { error } = await supabase.auth.signUp({
     email,
     password,
@@ -83,7 +83,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
       emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/confirm`,
     },
   })
- 
+
   if (error) {
     if (error.message.includes('already registered')) {
       return { success: false, error: 'An account with this email already exists.' }
@@ -91,65 +91,34 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
     return { success: false, error: error.message }
   }
 
-  // ── Create free 1-day subscription for new user customers ────
-  if (role === 'user') {
-    try {
-      // Get the created user to find their ID
-      const { data: { user: createdUser } } = await supabase.auth.getUser()
-      
-      if (createdUser) {
-        const now = new Date()
-        const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000) // 24 hours from now
-        
-        const { error: subError } = await supabase.from('subscriptions').insert({
-          user_id: createdUser.id,
-          tier: 'daily',
-          status: 'active',
-          starts_at: now.toISOString(),
-          expires_at: expiresAt.toISOString(),
-          amount_paid: 0,
-          currency: 'KES',
-          auto_renew: true, // Auto-start paid subscription after free day
-        })
+  // ✅ NO FREE TRIAL - Users must subscribe to access premium features
 
-        if (subError) {
-          console.error('Failed to create free subscription:', subError)
-        } else {
-          console.log(`Free 1-day subscription created for user ${createdUser.id}`)
-        }
-      }
-    } catch (subErr) {
-      console.error('Subscription creation failed:', subErr)
-    }
-  }
- 
   return { success: true, data: { message: 'Check your email to confirm your account.' } }
 }
- 
+
 // ── Sign In ─────────────────────────────────────────────────
- 
+
 export async function signInAction(formData: FormData): Promise<ActionResult> {
   const rawData = {
     email: formData.get('email'),
     password: formData.get('password'),
   }
- 
+
   const result = LoginSchema.safeParse(rawData)
   if (!result.success) {
     return { success: false, error: 'Invalid email or password format.' }
   }
- 
+
   const { email, password } = result.data
   const supabase = await createServerSupabaseClient()
- 
+
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
- 
+
   if (error) {
-    // Generic error message to prevent user enumeration
     return { success: false, error: 'Invalid email or password. Please try again.' }
   }
- 
-  // Fetch user role to determine redirect
+
+  // Fetch user profile to determine redirect
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('role, is_active, onboarding_complete, full_name')
@@ -165,16 +134,16 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
     await supabase.auth.signOut()
     return { success: false, error: 'Your account has been deactivated. Contact support.' }
   }
- 
+
   revalidatePath('/', 'layout')
 
-  const fullName = profile?.full_name || data.user.email?.split('@')[0] || 'Foodie'
+  const fullName = profile?.full_name || data.user.email?.split('@')[0] || 'User'
 
   try {
     await supabase.from('notification_logs').insert({
       user_id: data.user.id,
       title: `👋 Welcome back, ${fullName}!`,
-      body: 'Ready to continue your meal planning journey?',
+      body: 'Ready to continue your journey?',
       type: 'system',
       channel: 'in_app',
       is_read: false,
@@ -182,32 +151,54 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
       metadata: { trigger: 'login', first_login: false },
     })
   } catch (_) {
+    // Ignore notification errors
   }
- 
-  // Return role for client-side redirect
-  return { 
-    success: true, 
-    data: { 
-      role: profile.role, 
-      onboardingComplete: profile.onboarding_complete ?? true,
-    } 
+
+  // ✅ COMPLETE REDIRECT LOGIC FOR ALL ROLES
+  let redirectUrl = '/dashboard/user/overview' // Default fallback
+
+  // Admin/Superadmin → Admin Dashboard
+  if (profile.role === 'admin' || profile.role === 'superadmin') {
+    redirectUrl = '/dashboard'
+  }
+  // Vendor → Check onboarding
+  else if (profile.role === 'vendor') {
+    redirectUrl = profile.onboarding_complete
+      ? '/dashboard/vendor/overview'
+      : '/vendor-signup'
+  }
+  // User → Check onboarding
+  else if (profile.role === 'user') {
+    redirectUrl = profile.onboarding_complete
+      ? '/dashboard/user/overview'
+      : '/onboarding'
+  }
+
+  // Return role, onboarding status, and redirect URL
+  return {
+    success: true,
+    data: {
+      role: profile.role,
+      onboardingComplete: profile.onboarding_complete ?? false,
+      redirect: redirectUrl,
+    },
   }
 }
- 
+
 // ── Sign Out ────────────────────────────────────────────────
- 
+
 export async function signOutAction() {
   const supabase = await createServerSupabaseClient()
   await supabase.auth.signOut()
   revalidatePath('/', 'layout')
   redirect('/login')
 }
- 
+
 // ── Google OAuth ─────────────────────────────────────────────
- 
-export async function signInWithGoogleAction(role: 'user' | 'vendor' = 'user') {
+
+export async function signInWithGoogleAction(role: 'user' | 'vendor' | 'admin' = 'user') {
   const supabase = await createServerSupabaseClient()
- 
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -215,78 +206,77 @@ export async function signInWithGoogleAction(role: 'user' | 'vendor' = 'user') {
       queryParams: { access_type: 'offline', prompt: 'consent' },
     },
   })
- 
+
   if (error) return { success: false, error: error.message }
   if (data.url) redirect(data.url)
 }
- 
+
 // ── Forgot Password ─────────────────────────────────────────
- 
+
 export async function forgotPasswordAction(formData: FormData): Promise<ActionResult> {
   const email = formData.get('email') as string
   const result = ResetPasswordSchema.safeParse({ email })
- 
+
   if (!result.success) {
     return { success: false, error: 'Please enter a valid email address.' }
   }
- 
+
   const supabase = await createServerSupabaseClient()
- 
+
   await supabase.auth.resetPasswordForEmail(result.data.email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/reset-password`,
   })
- 
-  // Always return success to prevent email enumeration attacks
+
   return {
     success: true,
     data: { message: 'If that email exists, you will receive a reset link shortly.' },
   }
 }
- 
+
 // ── Update Password ─────────────────────────────────────────
- 
+
 export async function updatePasswordAction(formData: FormData): Promise<ActionResult> {
   const password = formData.get('password') as string
   const result = UpdatePasswordSchema.safeParse({ password })
- 
+
   if (!result.success) {
     return { success: false, error: 'Password does not meet requirements.' }
   }
- 
+
   const supabase = await createServerSupabaseClient()
   const { error } = await supabase.auth.updateUser({ password: result.data.password })
- 
+
   if (error) return { success: false, error: error.message }
   return { success: true }
 }
- 
+
 // ── Get Current User ─────────────────────────────────────────
- 
+
 export async function getCurrentUser() {
   const supabase = await createServerSupabaseClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) return null
- 
+
   const { data: profile } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single()
- 
+
   return profile
 }
- 
+
 // ── Verify OTP (for phone) ───────────────────────────────────
- 
+
 export async function verifyOtpAction(phone: string, token: string): Promise<ActionResult> {
   const supabase = await createServerSupabaseClient()
- 
+
   const { error } = await supabase.auth.verifyOtp({
     phone,
     token,
     type: 'sms',
   })
- 
+
   if (error) return { success: false, error: 'Invalid or expired OTP.' }
   return { success: true }
 }

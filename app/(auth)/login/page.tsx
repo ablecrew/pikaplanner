@@ -10,7 +10,7 @@ import { signInAction, signInWithGoogleAction } from '@/app/actions/auth'
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirectTo') ?? '/dashboard'
+  const redirectTo = searchParams.get('redirectTo')
 
   const [isPending, startTransition] = useTransition()
   const [showPassword, setShowPassword] = useState(false)
@@ -30,33 +30,15 @@ function LoginForm() {
         return
       }
 
-      const { role, onboardingComplete } = result.data as {
-        role?: string
-        onboardingComplete?: boolean
-      }
+      // ✅ Use the redirect URL from signInAction (contains full role logic)
+      const { redirect } = result.data as { redirect?: string }
 
-      // 1. Admins: Always go to dashboard
-      if (role === 'admin' || role === 'superadmin') {
-        router.push('/dashboard')
-        return
-      }
-
-      // 2. Vendors: If onboarding incomplete, go to vendor-signup, else dashboard
-      if (role === 'vendor') {
-        if (!onboardingComplete) {
-          router.push('/vendor-signup')
-        } else {
-          router.push(redirectTo)
-        }
-        return
-      }
-
-      // 3. Customers (Default): If onboarding incomplete, go to onboarding, else dashboard
-      // This is now strictly separated from the vendor logic
-      if (!onboardingComplete) {
-        router.push('/onboarding')
+      if (redirect) {
+        // Use redirect from action (handles all role/onboarding logic)
+        router.push(redirect)
       } else {
-        router.push(redirectTo)
+        // Fallback to redirectTo param or default
+        router.push(redirectTo ?? '/dashboard/user/overview')
       }
     })
   }
@@ -124,7 +106,13 @@ function LoginForm() {
           disabled={isPending}
           className="w-full bg-[#1A5C3A] text-white py-3 rounded-xl font-semibold hover:bg-[#144a2e] transition disabled:opacity-60 flex items-center justify-center gap-2"
         >
-          {isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</> : 'Sign In'}
+          {isPending ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" /> Signing in...
+            </>
+          ) : (
+            'Sign In'
+          )}
         </button>
       </form>
 
@@ -171,9 +159,7 @@ export default function LoginPage() {
           <h2 className="text-white text-4xl font-bold leading-tight mb-4">
             Smart meal planning for every day
           </h2>
-          <p className="text-green-200 text-lg">
-            Plan, cook, or order — all in one place.
-          </p>
+          <p className="text-green-200 text-lg">Plan, cook, or order — all in one place.</p>
         </div>
         <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-[#F4A535] opacity-10 rounded-full" />
         <div className="absolute -top-20 -left-20 w-60 h-60 bg-white opacity-5 rounded-full" />
@@ -181,7 +167,13 @@ export default function LoginPage() {
 
       {/* Right panel - form wrapper */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-6">
-        <Suspense fallback={<div className="w-full max-w-md h-96 flex items-center justify-center">Loading...</div>}>
+        <Suspense
+          fallback={
+            <div className="w-full max-w-md h-96 flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-[#1A5C3A]" />
+            </div>
+          }
+        >
           <LoginForm />
         </Suspense>
       </div>
