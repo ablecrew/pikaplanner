@@ -1,6 +1,6 @@
+// app/api/payhero/callback/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import type { PayheroCallback } from '@/lib/payhero/types'
 
 // ⚠️ Use SERVICE ROLE client for webhook — it bypasses RLS
 function getServiceClient() {
@@ -13,7 +13,7 @@ function getServiceClient() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as PayheroCallback
+    const body = await req.json()
     console.log('[Payhero Callback] Received webhook:', JSON.stringify(body, null, 2))
 
     const r = body?.response
@@ -23,10 +23,19 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getServiceClient()
-    const externalRef = r.ExternalReference
-    const checkoutId = r.CheckoutRequestID
-
-    console.log('[Payhero Callback] Looking for transaction...', { externalRef, checkoutId })
+    
+    // ✅ FIXED: Use correct field names from PayHero
+    const externalRef = r.User_Reference ?? r.Transaction_Reference
+    const checkoutId = r.Transaction_Reference ?? r.MPESA_REFERENCE
+    const mpesaReceipt = r.MPESA_REFERENCE ?? r.Transaction_Reference
+    const paymentStatus = r.woocommerce_payment_status ?? r.Status
+    
+    console.log('[Payhero Callback] Extracted references:', { 
+      externalRef, 
+      checkoutId, 
+      mpesaReceipt,
+      paymentStatus 
+    })
 
     if (!externalRef && !checkoutId) {
       console.error('[Payhero Callback] No reference found in payload')
@@ -71,17 +80,16 @@ export async function POST(req: NextRequest) {
       current_status: txn.status,
     })
 
-    // Determine status
-    const isSuccess = r.ResultCode === 0 || r.Status === 'Success'
-    const isCancelled = /cancel|user cancel/i.test(r.ResultDesc ?? '') || r.ResultCode === 1032
+    // ✅ FIXED: Determine status from woocommerce_payment_status
+    const isSuccess = paymentStatus === 'complete' || paymentStatus === 'Success' || paymentStatus === 'success'
+    const isCancelled = paymentStatus === 'cancelled' || paymentStatus === 'Cancelled'
     const newStatus = isSuccess ? 'success' : isCancelled ? 'cancelled' : 'failed'
 
     console.log('[Payhero Callback] Payment result:', {
       isSuccess,
       isCancelled,
       newStatus,
-      ResultCode: r.ResultCode,
-      ResultDesc: r.ResultDesc,
+      paymentStatus,
     })
 
     // Update transaction
@@ -89,8 +97,8 @@ export async function POST(req: NextRequest) {
       .from('transactions')
       .update({
         status: newStatus,
-        status_message: r.ResultDesc ?? r.Status,
-        mpesa_receipt: r.MpesaReceiptNumber ?? null,
+        status_message: paymentStatus ?? 'Payment completed',
+        mpesa_receipt: mpesaReceipt ?? null,
         completed_at: new Date().toISOString(),
         raw_callback: body,
       })
@@ -118,7 +126,7 @@ export async function POST(req: NextRequest) {
       await handleSuccessfulPayment(supabase, txn)
     } else {
       console.log('[Payhero Callback] Processing failed payment...')
-      await handleFailedPayment(supabase, txn, r.ResultDesc ?? 'Payment failed')
+      await handleFailedPayment(supabase, txn, paymentStatus ?? 'Payment failed')
     }
 
     console.log('[Payhero Callback] Webhook completed successfully')
@@ -149,9 +157,9 @@ async function handleRenewal(
     .update({
       status: isSuccess ? 'success' : isCancelled ? 'user_cancelled' : 'failed',
       amount: txn.amount,
-      payhero_reference: r.CheckoutRequestID ?? null,
-      mpesa_receipt: r.MpesaReceiptNumber ?? null,
-      failure_reason: !isSuccess ? r.ResultDesc ?? 'Unknown error' : null,
+      payhero_reference: r.Transaction_Reference ?? r.MPESA_REFERENCE ?? null,
+      mpesa_receipt: r.MPESA_REFERENCE ?? null,
+      failure_reason: !isSuccess ? (r.woocommerce_payment_status ?? 'Unknown error') : null,
     })
     .eq('id', renewalId)
 
@@ -202,7 +210,7 @@ async function handleRenewal(
         await supabase.from('notification_logs').insert({
           user_id: txn.user_id,
           title: 'Subscription Renewed! 🎉',
-          body: `Your ${sub.tier} plan has been renewed for ${planDays} more days. M-Pesa receipt: ${r.MpesaReceiptNumber}`,
+          body: `Your ${sub.tier} plan has been renewed for ${planDays} more days. M-Pesa receipt: ${r.MPESA_REFERENCE}`,
           metadata: { type: 'subscription_renewal', subscriptionId, renewalId },
         })
       }
@@ -229,7 +237,7 @@ async function handleRenewal(
         title: '⚠️ Subscription Renewal Failed',
         body: isCancelled
           ? `You cancelled the M-Pesa prompt. We'll try again later. Renew manually anytime.`
-          : `Renewal failed: ${r.ResultDesc ?? 'Please try again'}. You have 3 days to renew before your plan expires.`,
+          : `Renewal failed: ${r.woocommerce_payment_status ?? 'Please try again'}. You have 3 days to renew before your plan expires.`,
         metadata: { type: 'renewal_failed', subscriptionId, renewalId },
       })
     }
@@ -378,11 +386,6 @@ async function handleSuccessfulPayment(supabase: any, txn: any) {
       }
       
       console.log('[Payhero] Shopping cart paid:', txn.related_id)
-      // Mark all items in the shopping list as paid (we delete them in clearPaidItemsAction)
-      // Or you could mark them with a status flag here if you want history
-
-      // Optional: Create an order record for tracking
-      // await supabase.from('orders').insert({ ... })
       break
     }
 
@@ -398,7 +401,7 @@ async function handleSuccessfulPayment(supabase: any, txn: any) {
       body: `Your payment of KES ${txn.amount.toLocaleString()} was received. M-Pesa receipt: ${txn.mpesa_receipt ?? 'N/A'}`,
       metadata: { type: 'payment', reference: txn.reference, transaction_id: txn.id },
     })
-
+  
     if (notifErr) {
       console.error('[Payhero] Failed to send notification:', notifErr)
     }
@@ -421,7 +424,7 @@ async function handleFailedPayment(supabase: any, txn: any, reason: string) {
       .from(table)
       .update({ status: 'failed' })
       .eq('id', txn.related_id)
-      .eq('status', 'pending') // Only if still pending — don't disable an existing active sub
+      .eq('status', 'pending')
 
     if (failErr) {
       console.error('[Payhero] Failed to mark subscription as failed:', failErr)
