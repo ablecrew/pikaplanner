@@ -18,6 +18,17 @@ import {
   addMealToCartAction,
 } from './actions'
 
+// ✅ Cart item type (matches localStorage)
+type LocalStorageCartItem = {
+  id: string
+  name: string
+  price: number
+  quantity: number
+  image: string
+  vendorId: string
+  vendorName: string
+}
+
 // Helper to format Kenyan phone for display
 function formatKenyanPhoneDisplay(phone: string | null | undefined): string {
   if (!phone) return ''
@@ -31,7 +42,7 @@ function formatKenyanPhoneDisplay(phone: string | null | undefined): string {
   return phone
 }
 
-// ── 🆕 Phone Selection Component ──────────────────────────
+// ──  Phone Selection Component ──────────────────────────
 function PhoneSelector({
   savedPhone,
   selectedPhone,
@@ -293,9 +304,34 @@ export default function ShoppingClient({ initialData }: { initialData: ShoppingP
   const [activeTransactionRef, setActiveTransactionRef] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
+  // ✅ NEW: LocalStorage cart state
+  const [localStorageCart, setLocalStorageCart] = useState<LocalStorageCartItem[]>([])
+
   const items = useMemo(() => list?.shopping_list_items || [], [list])
-  const cartItems = useMemo(() => items.filter((item) => item.is_cart_item), [items])
+  
+  // ✅ UPDATED: Cart items from database
+  const dbCartItems = useMemo(() => items.filter((item) => item.is_cart_item), [items])
   const shoppingItems = useMemo(() => items.filter((item) => !item.is_cart_item), [items])
+
+  // ✅ UPDATED: Combined cart (localStorage + database)
+  const cartItems = useMemo(() => {
+    // Convert localStorage cart to ShoppingListItem format for display
+    const localStorageAsShoppingItems: ShoppingListItem[] = localStorageCart.map((item) => ({
+      id: `local-${item.id}`,
+      ingredient_name: item.name,
+      name: item.name,
+      quantity: String(item.quantity),
+      unit: 'meal',
+      estimated_price: item.price,
+      is_checked: false,
+      is_cart_item: true,
+      meal_id: item.id,
+      vendor_id: item.vendorId,
+      vendor_name: item.vendorName,
+    }))
+
+    return [...dbCartItems, ...localStorageAsShoppingItems]
+  }, [dbCartItems, localStorageCart])
 
   const checkedItems = useMemo(() => shoppingItems.filter((item) => item.is_checked).length, [shoppingItems])
   const remainingItems = Math.max(shoppingItems.length - checkedItems, 0)
@@ -322,6 +358,57 @@ export default function ShoppingClient({ initialData }: { initialData: ShoppingP
       profile?.location_city || profile?.location,
     ].filter(Boolean).slice(0, 8) as string[]
   }, [addOns.profile])
+
+  // ✅ NEW: Load cart from localStorage on mount
+  useEffect(() => {
+    try {
+      const storedCart = localStorage.getItem('pikaplan-cart')
+      if (storedCart) {
+        const parsed = JSON.parse(storedCart) as LocalStorageCartItem[]
+        setLocalStorageCart(parsed)
+      }
+    } catch (e) {
+      console.warn('Failed to load cart from localStorage:', e)
+    }
+  }, [])
+
+  // ✅ NEW: Sync localStorage cart to database on mount (if user is authenticated)
+  useEffect(() => {
+    const syncCartToDatabase = async () => {
+      if (localStorageCart.length === 0 || !list) return
+
+      try {
+        // Sync each localStorage item to database
+        for (const item of localStorageCart) {
+          // Check if item already exists in database
+          const exists = dbCartItems.some((dbItem) => dbItem.meal_id === item.id)
+          if (!exists) {
+            // Add to database
+            await addMealToCartAction({
+              id: item.id,
+              title: item.name,
+              price: item.price,
+              source: 'vendor_meal',
+              vendorId: item.vendorId,
+              vendorName: item.vendorName,
+            })
+          }
+        }
+
+        // Clear localStorage after syncing
+        localStorage.removeItem('pikaplan-cart')
+        setLocalStorageCart([])
+        
+        // Refresh list to show synced items
+        const data = await fetchShoppingPageData()
+        setList(data.list)
+      } catch (err) {
+        console.error('Failed to sync cart to database:', err)
+      }
+    }
+
+    syncCartToDatabase()
+  }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!error && !successMessage) return
