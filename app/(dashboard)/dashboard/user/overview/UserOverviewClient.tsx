@@ -52,6 +52,41 @@ function formatCurrency(n: number): string {
   return `KES ${n.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 }
 
+// ✅ NEW: Countdown timer component
+function CountdownTimer({ expiresAt }: { expiresAt: string }) {
+  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, mins: 0, secs: 0 })
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const difference = new Date(expiresAt).getTime() - Date.now()
+      
+      if (difference > 0) {
+        setTimeLeft({
+          days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+          mins: Math.floor((difference / 1000 / 60) % 60),
+          secs: Math.floor((difference / 1000) % 60),
+        })
+      } else {
+        setTimeLeft({ days: 0, hours: 0, mins: 0, secs: 0 })
+      }
+    }
+
+    calculateTimeLeft()
+    const timer = setInterval(calculateTimeLeft, 1000)
+    return () => clearInterval(timer)
+  }, [expiresAt])
+
+  return (
+    <div className="flex items-center gap-1 text-xs font-mono font-bold text-gray-700">
+      <span className="px-1.5 py-0.5 bg-gray-100 rounded">{String(timeLeft.days).padStart(2, '0')}</span>:
+      <span className="px-1.5 py-0.5 bg-gray-100 rounded">{String(timeLeft.hours).padStart(2, '0')}</span>:
+      <span className="px-1.5 py-0.5 bg-gray-100 rounded">{String(timeLeft.mins).padStart(2, '0')}</span>:
+      <span className="px-1.5 py-0.5 bg-gray-100 rounded">{String(timeLeft.secs).padStart(2, '0')}</span>
+    </div>
+  )
+}
+
 function Skeleton({ className }: { className?: string }) {
   return <div className={`bg-gray-100 rounded-lg animate-pulse ${className}`} />
 }
@@ -99,7 +134,6 @@ export default function UserOverviewClient({
     }
   }, [])
 
-  // ✅ UPDATED: Add to cart AND sync to database shopping list
   const handleAddToCart = useCallback((meal: RecommendedMeal) => {
     setCart((prev) => {
       const existing = prev.find((item) => item.id === meal.id)
@@ -173,23 +207,18 @@ export default function UserOverviewClient({
     return tips
   }, [data])
 
-  // ✅ UPDATED: Stats with split Past Orders and Total Spent
+  // ✅ UPDATED: Stats with Active Meal Plan (with countdown) and Total Spent breakdown
   const stats = useMemo(
     () => [
       { 
         label: 'Active Meal Plan', 
-        value: data?.activeMealPlan ? `${data.activeMealPlan.tier}` : 'None',
-        subValue: data?.activeMealPlan ? `${data.activeMealPlan.daysRemaining} days left` : '',
+        value: data?.activeMealPlan ? data.activeMealPlan.tier : 'None',
+        subValue: data?.activeMealPlan?.expiresAt ? (
+          <CountdownTimer expiresAt={data.activeMealPlan.expiresAt} />
+        ) : '',
         icon: Crown, 
         color: 'bg-violet-50 text-violet-600', 
         border: 'border-violet-100' 
-      },
-      { 
-        label: 'Active Food Orders', 
-        value: data?.activeFoodOrdersCount ?? 0, 
-        icon: ShoppingBag, 
-        color: 'bg-blue-50 text-blue-600', 
-        border: 'border-blue-100' 
       },
       { 
         label: 'Past Orders', 
@@ -197,6 +226,24 @@ export default function UserOverviewClient({
         icon: Clock, 
         color: 'bg-amber-50 text-amber-600', 
         border: 'border-amber-100' 
+      },
+      { 
+        label: 'Total Spent', 
+        value: (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Orders</span>
+              <span className="font-bold text-gray-900">{formatCurrency(data?.spendingBreakdown.orders.amount ?? 0)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">MP Subscription</span>
+              <span className="font-bold text-gray-900">{formatCurrency(data?.spendingBreakdown.subscriptions.amount ?? 0)}</span>
+            </div>
+          </div>
+        ),
+        icon: ShoppingCart, 
+        color: 'bg-emerald-50 text-emerald-600', 
+        border: 'border-emerald-100' 
       },
       { 
         label: 'Favorites', 
@@ -208,30 +255,6 @@ export default function UserOverviewClient({
     ],
     [data, favoritesCount],
   )
-
-  // ✅ NEW: Spending breakdown cards
-  const spendingCards = useMemo(() => {
-    if (!data) return []
-    
-    return [
-      {
-        label: '🛒 Orders Expenditure',
-        amount: data.spendingBreakdown.orders.amount,
-        percentage: data.spendingBreakdown.orders.percentage,
-        count: data.spendingBreakdown.orders.orderCount,
-        color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        barColor: 'from-emerald-500 to-emerald-600',
-      },
-      {
-        label: '🍽️ Meal Plan Subscription',
-        amount: data.spendingBreakdown.subscriptions.amount,
-        percentage: data.spendingBreakdown.subscriptions.percentage,
-        count: data.spendingBreakdown.subscriptions.subscriptionCount,
-        color: 'bg-violet-50 text-violet-700 border-violet-200',
-        barColor: 'from-violet-500 to-violet-600',
-      },
-    ]
-  }, [data])
 
   if (!data) {
     return (
@@ -312,7 +335,7 @@ export default function UserOverviewClient({
         )}
       </AnimatePresence>
 
-      {/* ✅ UPDATED: KPI Stats with split Past Orders */}
+      {/* ✅ UPDATED: KPI Stats with countdown and spending breakdown */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {stats.map((stat, i) => (
           <motion.div
@@ -328,51 +351,18 @@ export default function UserOverviewClient({
                 <stat.icon size={18} />
               </div>
             </div>
-            <p className="text-2xl font-black text-gray-900 tracking-tight">{stat.value}</p>
-            {stat.subValue && (
-              <p className="text-xs text-gray-500 mt-1 font-medium">{stat.subValue}</p>
-            )}
+            <div className="text-left">
+              {typeof stat.value === 'string' || typeof stat.value === 'number' ? (
+                <p className="text-2xl font-black text-gray-900 tracking-tight">{stat.value}</p>
+              ) : (
+                stat.value
+              )}
+              {stat.subValue && (
+                <div className="mt-2">{stat.subValue}</div>
+              )}
+            </div>
           </motion.div>
         ))}
-      </div>
-
-      {/* ✅ NEW: Spending Breakdown */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-gray-900 flex items-center gap-2">
-            <ShoppingCart size={18} className="text-emerald-600" />
-            Total Spent: {formatCurrency(data.spendingBreakdown.total)}
-          </h3>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {spendingCards.map((card, i) => (
-            <motion.div
-              key={card.label}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className={`rounded-xl border ${card.color} p-4`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-bold">{card.label}</p>
-                <span className="text-xs font-semibold opacity-70">{card.count} {card.count === 1 ? 'item' : 'items'}</span>
-              </div>
-              
-              <p className="text-2xl font-black mb-3">{formatCurrency(card.amount)}</p>
-              
-              <div className="flex items-center gap-2">
-                <div className="flex-1 bg-white/50 rounded-full h-2 overflow-hidden">
-                  <div
-                    className={`bg-gradient-to-r ${card.barColor} h-full rounded-full transition-all duration-500`}
-                    style={{ width: `${card.percentage}%` }}
-                  />
-                </div>
-                <span className="text-xs font-bold">{card.percentage}%</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
       </div>
 
       {/* AI Smart Tips */}
