@@ -52,7 +52,7 @@ function formatCurrency(n: number): string {
   return `KES ${n.toLocaleString('en-KE', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 }
 
-// ✅ NEW: Countdown timer component
+// ✅ Countdown timer component
 function CountdownTimer({ expiresAt }: { expiresAt: string }) {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, mins: 0, secs: 0 })
 
@@ -207,7 +207,7 @@ export default function UserOverviewClient({
     return tips
   }, [data])
 
-  // ✅ UPDATED: Stats with Active Meal Plan (with countdown) and Total Spent breakdown
+  // ✅ UPDATED: Stats with Active Orders and improved Total Spent
   const stats = useMemo(
     () => [
       { 
@@ -221,23 +221,31 @@ export default function UserOverviewClient({
         border: 'border-violet-100' 
       },
       { 
-        label: 'Past Orders', 
-        value: data?.pastOrdersCount ?? 0, 
-        icon: Clock, 
-        color: 'bg-amber-50 text-amber-600', 
-        border: 'border-amber-100' 
+        label: 'Active Orders',  // ✅ CHANGED from Past Orders
+        value: data?.activeFoodOrdersCount ?? 0,  // ✅ Shows active orders count
+        icon: ShoppingBag,  // ✅ Changed icon
+        color: 'bg-blue-50 text-blue-600', 
+        border: 'border-blue-100' 
       },
       { 
         label: 'Total Spent', 
         value: (
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">Orders</span>
-              <span className="font-bold text-gray-900">{formatCurrency(data?.spendingBreakdown.orders.amount ?? 0)}</span>
+          <div className="space-y-2">
+            {/* ✅ TOTAL FIRST - Larger and bolder */}
+            <div className="pb-2 border-b border-gray-100">
+              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Total</p>
+              <p className="text-xl font-black text-emerald-600">{formatCurrency(data?.spendingBreakdown.total ?? 0)}</p>
             </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-500">MP Subscription</span>
-              <span className="font-bold text-gray-900">{formatCurrency(data?.spendingBreakdown.subscriptions.amount ?? 0)}</span>
+            {/* ✅ BREAKDOWN BELOW */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] text-gray-500">Orders</span>
+                <span className="text-xs font-bold text-gray-900">{formatCurrency(data?.spendingBreakdown.orders.amount ?? 0)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] text-gray-500">MP Subscription</span>
+                <span className="text-xs font-bold text-gray-900">{formatCurrency(data?.spendingBreakdown.subscriptions.amount ?? 0)}</span>
+              </div>
             </div>
           </div>
         ),
@@ -335,7 +343,7 @@ export default function UserOverviewClient({
         )}
       </AnimatePresence>
 
-      {/* ✅ UPDATED: KPI Stats with countdown and spending breakdown */}
+      {/* ✅ UPDATED: KPI Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {stats.map((stat, i) => (
           <motion.div
