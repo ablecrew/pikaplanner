@@ -1,4 +1,4 @@
-'use client'
+'use client' 
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -26,7 +26,7 @@ export default function ExpiredLinkPage() {
 
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
             <p className="text-sm text-amber-800">
-              <strong> Why did this happen?</strong>
+              <strong>Why did this happen?</strong>
               <br />
               Password reset links expire after 1 hour to protect your account security.
             </p>

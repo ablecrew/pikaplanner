@@ -1,12 +1,13 @@
-// app/auth/auth-code-error/page.tsx
 'use client'
 
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { AlertCircle, ArrowLeft } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 
-export default function AuthCodeErrorPage() {
+// Extract the content that uses useSearchParams into a separate component
+function AuthCodeErrorContent() {
   const searchParams = useSearchParams()
   const error = searchParams.get('error') || 'Unknown error'
 
@@ -48,5 +49,21 @@ export default function AuthCodeErrorPage() {
         </div>
       </motion.div>
     </div>
+  )
+}
+
+// Main page component with Suspense wrapper
+export default function AuthCodeErrorPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#F8F5F0] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-[#1A5C3A] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    }>
+      <AuthCodeErrorContent />
+    </Suspense>
   )
 }
