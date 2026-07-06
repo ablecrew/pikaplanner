@@ -372,7 +372,7 @@ export default function ShoppingClient({ initialData }: { initialData: ShoppingP
     }
   }, [])
 
-  // ✅ NEW: Sync localStorage cart to database on mount (if user is authenticated)
+  // ✅ UPDATED: Sync localStorage cart to database on mount (only once)
   useEffect(() => {
     const syncCartToDatabase = async () => {
       if (localStorageCart.length === 0 || !list) return
@@ -407,8 +407,12 @@ export default function ShoppingClient({ initialData }: { initialData: ShoppingP
       }
     }
 
-    syncCartToDatabase()
-  }, [list]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Only sync once when list is loaded
+    if (localStorageCart.length > 0 && list) {
+      syncCartToDatabase()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list]) // Only depend on list, not localStorageCart
 
   useEffect(() => {
     if (!error && !successMessage) return
@@ -494,10 +498,47 @@ export default function ShoppingClient({ initialData }: { initialData: ShoppingP
     try { await toggleItemAction(item.id, next) } catch (err: any) { setError(err.message); handleRefresh() }
   }
 
+  // ✅ FIXED: Handle both localStorage and database items
   const removeItem = async (itemId: string) => {
     const previous = list
-    setList((prev) => prev ? { ...prev, shopping_list_items: (prev.shopping_list_items || []).filter((item) => item.id !== itemId) } : prev)
-    try { await removeItemAction(itemId) } catch (err: any) { setError(err.message); setList(previous) }
+    
+    // ✅ Check if it's a localStorage item (has 'local-' prefix)
+    if (itemId.startsWith('local-')) {
+      // Remove from localStorage only (not database)
+      try {
+        const storedCart = localStorage.getItem('pikaplan-cart')
+        if (storedCart) {
+          const parsed = JSON.parse(storedCart) as LocalStorageCartItem[]
+          const realId = itemId.replace('local-', '')
+          const filtered = parsed.filter((item) => item.id !== realId)
+          localStorage.setItem('pikaplan-cart', JSON.stringify(filtered))
+          setLocalStorageCart(filtered)
+        }
+      } catch (e) {
+        console.warn('Failed to remove from localStorage:', e)
+      }
+      
+      // Update local state
+      setList((prev) => prev ? { 
+        ...prev, 
+        shopping_list_items: (prev.shopping_list_items || []).filter((item) => item.id !== itemId) 
+      } : prev)
+      
+      return
+    }
+    
+    // Database item - remove from database
+    setList((prev) => prev ? { 
+      ...prev, 
+      shopping_list_items: (prev.shopping_list_items || []).filter((item) => item.id !== itemId) 
+    } : prev)
+    
+    try { 
+      await removeItemAction(itemId) 
+    } catch (err: any) { 
+      setError(err.message)
+      setList(previous) 
+    }
   }
 
   // 🆕 Initiate checkout — opens the form if not already shown
