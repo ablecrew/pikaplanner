@@ -46,11 +46,41 @@ export type RecommendedMeal = {
   cuisine: string
 }
 
+// ✅ NEW: Active Meal Plan type
+export type ActiveMealPlan = {
+  id: string
+  tier: string
+  status: string
+  expiresAt: string
+  daysRemaining: number
+  amountPaid: number
+}
+
+// ✅ NEW: Spending breakdown type
+export type SpendingBreakdown = {
+  total: number
+  orders: {
+    amount: number
+    percentage: number
+    orderCount: number
+  }
+  subscriptions: {
+    amount: number
+    percentage: number
+    subscriptionCount: number
+  }
+}
+
 export type UserOverviewData = {
   userName: string
   activeOrders: ActiveOrder[]
   recommendedMeals: RecommendedMeal[]
-  totalSpent: number
+  
+  // ✅ UPDATED: Split stats
+  activeMealPlan: ActiveMealPlan | null
+  activeFoodOrdersCount: number
+  spendingBreakdown: SpendingBreakdown
+  
   pastOrdersCount: number
   favoritesCount: number
 }
@@ -86,6 +116,35 @@ export async function fetchUserOverview(): Promise<UserOverviewData | null> {
     user.email?.split('@')[0] ||
     'Foodie'
 
+  // ✅ ACTIVE MEAL PLAN (Subscription)
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('id, tier, status, expires_at, amount_paid')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+    .gte('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let activeMealPlan: ActiveMealPlan | null = null
+  if (subscription) {
+    const expiresAt = new Date(subscription.expires_at)
+    const daysRemaining = Math.max(
+      0,
+      Math.ceil((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    )
+    
+    activeMealPlan = {
+      id: subscription.id,
+      tier: subscription.tier,
+      status: subscription.status,
+      expiresAt: subscription.expires_at,
+      daysRemaining,
+      amountPaid: Number(subscription.amount_paid || 0),
+    }
+  }
+
   // Orders
   const { data: orders } = await supabase
     .from('orders')
@@ -99,7 +158,9 @@ export async function fetchUserOverview(): Promise<UserOverviewData | null> {
     (o) => o.status === 'Delivered' || o.status === 'Completed',
   )
   const pastOrdersCount = completed.length
-  const totalSpent = completed.reduce(
+  
+  // ✅ ORDERS EXPENDITURE (only completed orders)
+  const ordersExpenditure = completed.reduce(
     (acc, o) => acc + Number(o.total_amount || 0),
     0,
   )
@@ -107,6 +168,7 @@ export async function fetchUserOverview(): Promise<UserOverviewData | null> {
   const activeRows = allOrders.filter(
     (o) => !['Delivered', 'Completed', 'Cancelled', 'Refunded'].includes(o.status),
   )
+  const activeFoodOrdersCount = activeRows.length
 
   const activeOrderIds = activeRows.map((o) => o.id)
 
@@ -163,6 +225,37 @@ export async function fetchUserOverview(): Promise<UserOverviewData | null> {
       progress,
     }
   })
+
+  // ✅ SUBSCRIPTION EXPENDITURE
+  const { data: allSubscriptions } = await supabase
+    .from('subscriptions')
+    .select('amount_paid, status')
+    .eq('user_id', user.id)
+    .eq('status', 'active')
+
+  const subscriptionExpenditure = (allSubscriptions || []).reduce(
+    (acc, s) => acc + Number(s.amount_paid || 0),
+    0,
+  )
+
+  // ✅ SPENDING BREAKDOWN
+  const totalSpent = ordersExpenditure + subscriptionExpenditure
+  const ordersPercentage = totalSpent > 0 ? Math.round((ordersExpenditure / totalSpent) * 100) : 0
+  const subscriptionsPercentage = totalSpent > 0 ? Math.round((subscriptionExpenditure / totalSpent) * 100) : 0
+
+  const spendingBreakdown: SpendingBreakdown = {
+    total: totalSpent,
+    orders: {
+      amount: ordersExpenditure,
+      percentage: ordersPercentage,
+      orderCount: completed.length,
+    },
+    subscriptions: {
+      amount: subscriptionExpenditure,
+      percentage: subscriptionsPercentage,
+      subscriptionCount: allSubscriptions?.length || 0,
+    },
+  }
 
   // Recommended meals
   const { data: vendorMeals } = await supabase
@@ -234,8 +327,13 @@ export async function fetchUserOverview(): Promise<UserOverviewData | null> {
     userName,
     activeOrders,
     recommendedMeals,
-    totalSpent,
+    
+    // ✅ NEW split stats
+    activeMealPlan,
+    activeFoodOrdersCount,
+    spendingBreakdown,
+    
     pastOrdersCount,
-    favoritesCount: 0, // filled in from client (localStorage)
+    favoritesCount: 0,
   }
 }
