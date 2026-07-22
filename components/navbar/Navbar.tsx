@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -116,26 +117,6 @@ function getRoleBasePath(role: Role) {
   if (role === 'admin' || role === 'superadmin') return '/dashboard/admin'
   if (role === 'vendor') return '/dashboard/vendor'
   return '/dashboard/user'
-}
-
-export function PikaLogo({ size = 36 }: { size?: number }) {
-  return (
-    <div style={{ width: size, height: size, flexShrink: 0 }}>
-      <svg width={size} height={size} viewBox="0 0 40 40" fill="none" aria-hidden>
-        <rect width="40" height="40" rx="10" fill="#1A5C3A" />
-        <path
-          d="M12 28 C12 28 14 18 20 16 C26 14 26 20 22 22 C18 24 16 18 20 14"
-          stroke="#32CD32"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          fill="none"
-        />
-        <circle cx="26" cy="14" r="3" fill="#F4A535" />
-        <path d="M18 28 L22 28" stroke="white" strokeWidth="2" strokeLinecap="round" />
-        <path d="M16 31 L24 31" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.5" />
-      </svg>
-    </div>
-  )
 }
 
 export function UserAvatar({
@@ -482,22 +463,24 @@ export default function Navbar() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`)
+  const isActive = (href: string) => pathname === href || pathname?.startsWith(`${href}/`)
 
   return (
     <>
       <nav className="fixed top-0 left-0 right-0 z-[100] h-16 bg-white/95 backdrop-blur-md border-b border-emerald-200/40 shadow-[0_1px_20px_rgba(26,92,58,0.06)] font-poppins">
         <div className="max-w-[1200px] mx-auto px-5 h-full flex items-center justify-between">
           {/* Logo */}
-          <Link href={showAuthenticatedUI ? `${dashboardBasePath}/overview` : '/'} className="flex items-center gap-2.5 flex-shrink-0">
-            <PikaLogo size={36} />
-            <div>
-              <span className="font-extrabold text-[18px] text-[#1A5C3A] leading-none">
-                Pika<span className="text-[#F4A535]">Plan</span>
-              </span>
-              <span className="block text-[8.5px] text-gray-400 tracking-[1px] uppercase">Smart Meals</span>
-            </div>
-          </Link>
+          <Link
+               href={showAuthenticatedUI ? `${dashboardBasePath}/overview` : "/"} className="flex items-center gap-2.5 flex-shrink-0" >
+             <Image
+                 src="/PPL.png"
+                 alt="PikaPlan Logo"
+                 width={100}
+                 height={36}
+                 className="object-contain"
+                 priority
+             />
+        </Link>
 
           {/* Desktop Nav */}
           {showAuthenticatedUI && (
@@ -696,7 +679,7 @@ export default function Navbar() {
                   </div>
                   <div>
                     <p className="text-amber-300 font-bold text-sm">Upgrade Plan</p>
-                    <p className="text-amber-300/70 text-[11px]">From KES 50/week</p>
+                    <p className="text-amber-300/70 text-[11px]">From KES 67/week</p>
                   </div>
                 </Link>
               )}
@@ -730,13 +713,6 @@ export default function Navbar() {
 
       {/* Spacer */}
       <div className="h-16" aria-hidden />
-
-      <style>{`
-        @keyframes pikaPulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.18); opacity: 0.85; }
-        }
-      `}</style>
     </>
   )
 }

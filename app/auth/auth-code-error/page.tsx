@@ -9,7 +9,7 @@ import { Suspense } from 'react'
 // Extract the content that uses useSearchParams into a separate component
 function AuthCodeErrorContent() {
   const searchParams = useSearchParams()
-  const error = searchParams.get('error') || 'Unknown error'
+  const error = searchParams?.get('error') || 'Unknown error'
 
   return (
     <div className="min-h-screen bg-[#F8F5F0] flex items-center justify-center p-6">

@@ -45,14 +45,14 @@ export default function UserMealsClient({
   const searchParams = useSearchParams()
   const [data, setData] = useState<MealsPayload>(initialData)
   const [loading, setLoading] = useState(false)
-  const [search, setSearch] = useState(searchParams.get('search') || '')
+  const [search, setSearch] = useState(searchParams?.get('search') || '')
   const [categoryFilter, setCategoryFilter] = useState(
-    searchParams.get('category') || 'All',
+    searchParams?.get('category') || 'All',
   )
   const [cuisineFilter, setCuisineFilter] = useState(
-    searchParams.get('cuisine') || 'All',
+    searchParams?.get('cuisine') || 'All',
   )
-  const [page, setPage] = useState(Number(searchParams.get('page') || 1))
+  const [page, setPage] = useState(Number(searchParams?.get('page') || 1))
   const [selectedMeal, setSelectedMeal] = useState<Meal | null>(null)
   const [cart, setCart] = useState<Map<string, { meal: Meal; quantity: number }>>(getCart)
   const [addingId, setAddingId] = useState<string | null>(null)
@@ -80,7 +80,7 @@ export default function UserMealsClient({
       setLoading(true)
       setError(null)
       try {
-        const params = new URLSearchParams(searchParams.toString())
+        const params = new URLSearchParams(searchParams?.toString())
         const newSearch = next.search ?? search
         const newCategory = next.category ?? categoryFilter
         const newCuisine = next.cuisine ?? cuisineFilter

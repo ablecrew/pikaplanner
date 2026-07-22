@@ -10,7 +10,7 @@ import { signInAction, signInWithGoogleAction } from '@/app/actions/auth'
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirectTo')
+  const redirectTo = searchParams?.get('redirectTo') ?? '/dashboard/user/overview'
 
   const [isPending, startTransition] = useTransition()
   const [showPassword, setShowPassword] = useState(false)
