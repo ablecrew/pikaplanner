@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getServiceClient()
     
-    // ✅ FIXED: Use correct field names from PayHero
+    // Correct field names from PayHero
     const externalRef = r.User_Reference ?? r.Transaction_Reference
     const checkoutId = r.Transaction_Reference ?? r.MPESA_REFERENCE
     const mpesaReceipt = r.MPESA_REFERENCE ?? r.Transaction_Reference

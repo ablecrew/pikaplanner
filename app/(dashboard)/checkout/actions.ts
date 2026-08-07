@@ -117,7 +117,7 @@ export async function initiatePaymentAction(
   }
 
   // ── Call Payhero ──
-  const callbackUrl = `${process.env.PAYHERO_CALLBACK_BASE_URL ?? 'https://pikaplanner.vercel.app'}/api/payhero/callback`
+  const callbackUrl = `${process.env.PAYHERO_CALLBACK_BASE_URL ?? 'https://pikaplanner.com'}/api/payhero/callback`
 
   const stkResult = await initiateSTKPush({
     amount: input.amount,

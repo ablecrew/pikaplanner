@@ -21,7 +21,7 @@ function generateMpesaCode(): string {
   return code
 }
 
-function safeOrigin(value?: string | null, fallback = 'https://pikaplanner.vercel.app'): string {
+function safeOrigin(value?: string | null, fallback = 'https://pikaplanner.com'): string {
   try {
     const raw = value?.trim() || fallback
     return new URL(raw).origin
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
         const appUrl =
           process.env.INTASEND_HOST ||
           process.env.NEXT_PUBLIC_APP_URL ||
-          'https://pikaplanner.vercel.app'
+          'https://pikaplanner.com'
 
         const merchantEmail =
           process.env.INTASEND_MERCHANT_EMAIL ||

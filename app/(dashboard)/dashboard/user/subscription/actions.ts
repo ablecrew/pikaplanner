@@ -76,7 +76,7 @@ export async function fetchSubscriptionData(userId: string) {
  * 2. This function checks the database for status updates
  * 3. If status is 'active', payment was successful
  * 
- * NOTE: We don't query PayHero API directly because their query endpoint
+ * NOTE: Don't query PayHero API directly because their query endpoint
  * is not available. The webhook is the primary method for status updates.
  */
 // ── Status Polling (after payment) ────────────────────────
@@ -340,7 +340,7 @@ export async function initiateSubscriptionPaymentAction(
   }
 
   // ── Call Payhero ──
-  const callbackUrl = `${process.env.PAYHERO_CALLBACK_BASE_URL ?? 'https://pikaplanner.vercel.app'}/api/payhero/callback`
+  const callbackUrl = `${process.env.PAYHERO_CALLBACK_BASE_URL ?? 'https://pikaplanner.com'}/api/payhero/callback`
 
   const stkResult = await initiateSTKPush({
     amount: input.amount,
