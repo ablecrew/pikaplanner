@@ -163,7 +163,7 @@ export default function RootLayout({
         <CookieConsentBanner />
 
         {/* 📊 Google Analytics 4 - Production Only */}
-        {isProduction && GA4_MEASUREMENT_ID !== 'G-Q06D4XG61C' && (
+        {isProduction && (
           <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />
         )}
       </body>
