@@ -1,4 +1,3 @@
-// app/(auth)/reset-password/page.tsx
 'use client'
 
 import { useState, useTransition, useEffect } from 'react'
