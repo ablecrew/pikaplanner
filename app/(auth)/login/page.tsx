@@ -3,6 +3,7 @@
 import { useState, useTransition, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Eye, EyeOff, Loader2, AlertCircle, Mail, Lock } from 'lucide-react'
 import { signInAction, signInWithGoogleAction } from '@/app/actions/auth'
 
@@ -19,25 +20,27 @@ function LoginForm() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError(null)
-
+  
     const formData = new FormData(event.currentTarget)
-
+  
     startTransition(async () => {
       const result = await signInAction(formData)
-
+  
       if (!result.success) {
         setError(result.error ?? 'Login failed')
         return
       }
-
+  
+      // ✅ FIRE-AND-FORGET: Log the login notification in the background
+      // Do NOT await this — it should not block the redirect
+      fetch('/api/log-login', { method: 'POST' }).catch(() => {})
+  
       // ✅ Use the redirect URL from signInAction (contains full role logic)
       const { redirect } = result.data as { redirect?: string }
-
+  
       if (redirect) {
-        // Use redirect from action (handles all role/onboarding logic)
         router.push(redirect)
       } else {
-        // Fallback to redirectTo param or default
         router.push(redirectTo ?? '/dashboard/user/overview')
       }
     })
@@ -149,10 +152,15 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-1/2 bg-[#1A5C3A] p-12 flex-col justify-between relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#F4A535] rounded-xl flex items-center justify-center">
-              <span className="text-white font-black text-xl">P</span>
-            </div>
-            <span className="text-white font-bold text-2xl">Pika Planner</span>
+          <Image
+                src="/Pika_White.svg"
+                alt="PikaPlan Logo"
+                width={0}
+                height={0}
+                style={{ width: 'auto', height: '80px' }} 
+                className="object-contain"
+                priority
+            />
           </div>
         </div>
         <div className="relative z-10">

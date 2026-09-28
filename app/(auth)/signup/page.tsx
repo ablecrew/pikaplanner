@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Eye, EyeOff, Loader2, AlertCircle, Mail, Lock, User, Phone, ChefHat, ShoppingBag } from 'lucide-react'
 import { signUpAction } from '@/app/actions/auth'
  
@@ -78,10 +79,15 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 bg-[#1A5C3A] rounded-xl flex items-center justify-center">
-              <span className="text-white font-black text-xl">P</span>
-            </div>
-            <span className="font-bold text-2xl text-gray-900">Pika Planner</span>
+            <Image
+                src="/Pika_Logo.svg"
+                alt="PikaPlan Logo"
+                width={0}
+                height={0}
+                style={{ width: 'auto', height: '80px' }} 
+                className="object-contain"
+                priority
+            />
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Create your account</h1>
           <p className="text-gray-500 mt-1">Start planning your meals today</p>

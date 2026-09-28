@@ -296,8 +296,8 @@ export async function initiateSubscriptionPaymentAction(
       [userIdField]: user.id,
       tier: input.tier,
       status: 'pending',
-      starts_at: now.toISOString(),
-      expires_at: expiresAt.toISOString(),
+      // ✅ FIXED: Don't set starts_at and expires_at until payment succeeds
+      // This prevents failed payments from showing as "active"
       amount_paid: input.amount,
       auto_renew: input.billingType === 'auto-renew',
       billing_type: input.billingType,

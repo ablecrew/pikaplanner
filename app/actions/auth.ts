@@ -112,16 +112,17 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   const { email, password } = result.data
   const supabase = await createServerSupabaseClient()
 
+  // 1. Authenticate (unavoidable network call)
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) {
     return { success: false, error: 'Invalid email or password. Please try again.' }
   }
 
-  // Fetch user profile to determine redirect
+  // 2. Fetch only the profile fields we actually need (single query)
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('role, is_active, onboarding_complete, full_name')
+    .select('role, is_active, onboarding_complete')
     .eq('id', data.user.id)
     .single()
 
@@ -135,46 +136,21 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
     return { success: false, error: 'Your account has been deactivated. Contact support.' }
   }
 
-  revalidatePath('/', 'layout')
+  // Compute redirect URL
+  let redirectUrl = '/dashboard/user/overview'
 
-  const fullName = profile?.full_name || data.user.email?.split('@')[0] || 'User'
-
-  try {
-    await supabase.from('notification_logs').insert({
-      user_id: data.user.id,
-      title: `👋 Welcome back, ${fullName}!`,
-      body: 'Ready to continue your journey?',
-      type: 'system',
-      channel: 'in_app',
-      is_read: false,
-      sent_at: new Date().toISOString(),
-      metadata: { trigger: 'login', first_login: false },
-    })
-  } catch (_) {
-    // Ignore notification errors
-  }
-
-  // ✅ COMPLETE REDIRECT LOGIC FOR ALL ROLES
-  let redirectUrl = '/dashboard/user/overview' // Default fallback
-
-  // Admin/Superadmin → Admin Dashboard
   if (profile.role === 'admin' || profile.role === 'superadmin') {
     redirectUrl = '/dashboard'
-  }
-  // Vendor → Check onboarding
-  else if (profile.role === 'vendor') {
+  } else if (profile.role === 'vendor') {
     redirectUrl = profile.onboarding_complete
       ? '/dashboard/vendor/overview'
       : '/vendor-signup'
-  }
-  // User → Check onboarding
-  else if (profile.role === 'user') {
+  } else if (profile.role === 'user') {
     redirectUrl = profile.onboarding_complete
       ? '/dashboard/user/overview'
       : '/onboarding'
   }
 
-  // Return role, onboarding status, and redirect URL
   return {
     success: true,
     data: {
@@ -199,10 +175,22 @@ export async function signOutAction() {
 export async function signInWithGoogleAction(role: 'user' | 'vendor' | 'admin' = 'user') {
   const supabase = await createServerSupabaseClient()
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+
+  if (!appUrl) {
+    return { success: false, error: 'NEXT_PUBLIC_APP_URL is not set.' }
+  }
+
+  // In development, force localhost to avoid accidentally hitting production
+  const redirectBase =
+    process.env.NODE_ENV === 'development' && !appUrl.includes('localhost')
+      ? 'http://localhost:3000'
+      : appUrl
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?role=${role}`,
+      redirectTo: `${redirectBase}/auth/callback?role=${role}`,
       queryParams: { access_type: 'offline', prompt: 'consent' },
     },
   })

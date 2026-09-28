@@ -57,7 +57,7 @@ export const COMPANY = {
   tagline: 'AI-powered meal planning for every Kenyan family.',
   founded: '2026',
   headquarters: 'Nairobi, Kenya',
-  website: 'https://pikaplanner.vercel.app',
+  website: 'https://pikaplanner.com',
   industry: 'FoodTech / Consumer SaaS',
   employees: '15–25',
   registrationNumber: 'PVR-2026-001234',

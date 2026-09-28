@@ -107,25 +107,19 @@ export async function GET(request: Request) {
         }
       }
 
-      // Send notifications
-      try {
-        const displayName = user.user_metadata?.full_name || user.email?.split('@')[0] || 'User'
-
-        await supabase.from('notification_logs').insert({
-          user_id: user.id,
-          title: isFirstLogin ? `🎉 Welcome to PikaPlan, ${displayName}!` : `👋 Welcome back, ${displayName}!`,
-          body: isFirstLogin
-            ? 'Start exploring delicious meals, create your first meal plan, and discover local vendors.'
-            : "Ready to continue your meal planning journey?",
-          type: 'system',
-          channel: 'in_app',
-          is_read: false,
-          sent_at: new Date().toISOString(),
-          metadata: { trigger: 'login', first_login: isFirstLogin },
-        })
-      } catch (notifError) {
-        console.error('Welcome notification failed:', notifError)
-      }
+      // ✅ FIRE-AND-FORGET: Log the login notification in the background
+      // We pass the session cookie so the API route can authenticate the user
+      // and we do NOT await this — it should not block the redirect
+      fetch(`${origin}/api/log-login`, {
+        method: 'POST',
+        headers: {
+          cookie: request.headers.get('cookie') || '',
+        },
+        // Keep the request alive even if the user navigates away
+        keepalive: true,
+      }).catch((err) => {
+        console.error('Fire-and-forget log-login failed:', err)
+      })
 
       // Fetch final profile state and redirect
       const { data: finalProfile } = await supabase

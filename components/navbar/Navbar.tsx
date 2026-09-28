@@ -471,16 +471,19 @@ export default function Navbar() {
         <div className="max-w-[1200px] mx-auto px-5 h-full flex items-center justify-between">
           {/* Logo */}
           <Link
-               href={showAuthenticatedUI ? `${dashboardBasePath}/overview` : "/"} className="flex items-center gap-2.5 flex-shrink-0" >
-             <Image
-                 src="/PPL.png"
-                 alt="PikaPlan Logo"
-                 width={100}
-                 height={36}
-                 className="object-contain"
-                 priority
-             />
-        </Link>
+              href={showAuthenticatedUI ? `${dashboardBasePath}/overview` : "/"} 
+              className="flex items-center gap-2.5 flex-shrink-0" 
+>
+                <Image
+                    src="/Pika_Logo.svg"
+                    alt="PikaPlan Logo"
+                    width={0}
+                    height={0}
+                    style={{ width: 'auto', height: '55px' }} 
+                    className="object-contain"
+                    priority
+                />
+                </Link>
 
           {/* Desktop Nav */}
           {showAuthenticatedUI && (

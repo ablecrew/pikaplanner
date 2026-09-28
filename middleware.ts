@@ -107,12 +107,22 @@ export async function middleware(request: NextRequest) {
     'Content-Security-Policy',
     [
       `default-src 'self'`,
-      `script-src 'self' 'unsafe-eval' 'unsafe-inline'`,
+  
+      // ✅ Allow Google Tag Manager + Google Analytics scripts
+      `script-src 'self' 'unsafe-eval' 'unsafe-inline' https://www.googletagmanager.com https://www.google-analytics.com https://ssl.google-analytics.com`,
+  
       `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
       `font-src 'self' data: https://fonts.gstatic.com`,
-      `img-src 'self' data: blob: https:`,
-      `connect-src 'self' ${supabaseUrl} wss://${supabaseHost} https:`,
-      `frame-src 'none'`,
+  
+      // ✅ Allow GA tracking pixels and GTM preview images
+      `img-src 'self' data: blob: https: https://www.google-analytics.com https://www.googletagmanager.com`,
+  
+      // ✅ Allow outgoing connections to Supabase, GA, and GTM
+      `connect-src 'self' ${supabaseUrl} wss://${supabaseHost} https://www.google-analytics.com https://analytics.google.com https://www.googletagmanager.com https://*.supabase.co wss://*.supabase.co`,
+  
+      // ✅ Allow GTM's iframe (used for preview/debug mode)
+      `frame-src 'self' https://www.googletagmanager.com`,
+  
       `object-src 'none'`,
       `base-uri 'self'`,
     ].join('; ')

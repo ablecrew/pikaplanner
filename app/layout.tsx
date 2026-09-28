@@ -1,30 +1,34 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import { Poppins } from 'next/font/google'
 import { GoogleAnalytics } from '@next/third-parties/google'
 import './globals.css'
 import { AuthProvider } from '@/contexts/AuthContext'
 import CookieConsentBanner from '@/components/cookie-consent/CookieConsentBanner'
 
-const inter = Inter({ subsets: ['latin'] })
+// ✅ Poppins — loaded once at the root, applied globally
+const poppins = Poppins({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  variable: '--font-poppins',
+  display: 'swap',
+})
 
 // 🌐 Environment-based site URL
-// Set NEXT_PUBLIC_SITE_URL=https://pikaplanner.com in Vercel for production.
-// Preview/staging deployments will fall back to the Vercel URL and stay noindex.
 const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL ?? 'https://pikaplanner.vercel.app'
 const isProduction = SITE_URL === 'https://pikaplanner.com'
 
 // 📊 Google Analytics 4 Measurement ID
-// Replace with your actual GA4 Measurement ID from analytics.google.com
 const GA4_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID || 'G-Q06D4XG61C'
 
-// ️ Structured Data (Schema.org) for Google Product Listing
+// 🏷️ Structured Data (Schema.org)
 const structuredData = {
   '@context': 'https://schema.org',
   '@type': 'WebApplication',
   name: 'Pika Plan',
   url: SITE_URL,
-  description: 'Smart meal planning app for Kenya. Plan meals, generate shopping lists, and order from local vendors.',
+  description:
+    'Smart meal planning app for Kenya. Plan meals, generate shopping lists, and order from local vendors.',
   applicationCategory: 'LifestyleApplication',
   operatingSystem: 'Web',
   browserRequirements: 'Requires JavaScript',
@@ -45,10 +49,7 @@ const structuredData = {
     '@type': 'Organization',
     name: 'Pika Plan Ltd',
     url: SITE_URL,
-    logo: {
-      '@type': 'ImageObject',
-      url: `${SITE_URL}/logo.png`,
-    },
+    logo: { '@type': 'ImageObject', url: `${SITE_URL}/logo.png` },
   },
   featureList: [
     'AI-powered meal suggestions',
@@ -84,9 +85,7 @@ export const metadata: Metadata = {
   publisher: 'Pika Plan Technologies Ltd',
   alternates: {
     canonical: '/',
-    languages: {
-      'en-KE': '/',
-    },
+    languages: { 'en-KE': '/' },
   },
   openGraph: {
     title: 'Pika Plan – Smart Meal Planning',
@@ -139,14 +138,14 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={poppins.variable}>
       <head>
-        {/* 🏷️ Structured Data for Google Product Listing */}
+        {/* 🏷️ Structured Data */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
-        {/*  Google Search Console Verification */}
+        {/* 🔍 Google Search Console Verification */}
         {process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION && (
           <meta
             name="google-site-verification"
@@ -154,18 +153,14 @@ export default function RootLayout({
           />
         )}
       </head>
-      <body className={inter.className}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+      <body className={`${poppins.className} antialiased`}>
+        <AuthProvider>{children}</AuthProvider>
 
-        {/* 🍪 Global cookie consent — must mount on every page */}
+        {/* 🍪 Global cookie consent */}
         <CookieConsentBanner />
 
-        {/* 📊 Google Analytics 4 - Production Only */}
-        {isProduction && (
-          <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />
-        )}
+        {/* 📊 Google Analytics 4 - Production only */}
+        {isProduction && <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />}
       </body>
     </html>
   )

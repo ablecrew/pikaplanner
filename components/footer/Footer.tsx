@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Phone,
   Mail,
@@ -17,22 +18,7 @@ import {
 } from 'lucide-react';
 import { FaGooglePlay, FaFacebook, FaInstagram, FaYoutube, FaTwitter } from 'react-icons/fa';
 import CookieSettingsButton from '@/components/cookie-consent/CookieSettingsButton'
-// Placeholder for PikaLogo since it's an external component
-const PikaLogo = ({ size = 32 }: { size?: number }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="text-white"
-  >
-    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-  </svg>
-);
+
 const PRODUCT_LINKS = [
   { href: '/meal-generator', label: 'Meal Generator', icon: Sparkles },
   { href: '/pricing', label: 'Pricing', icon: ShoppingCart },
@@ -86,17 +72,15 @@ export default function Footer() {
           {/* Brand Section */}
           <div>
             <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[#32CD32] to-[#1A5C3A] shadow-lg shadow-green-500/20">
-                <PikaLogo size={32} />
-              </div>
-              <div>
-                <p className="bg-gradient-to-r from-[#32CD32] to-[#F4A535] bg-clip-text text-2xl font-extrabold leading-none text-transparent">
-                  Pika<span className="text-[#F4A535]">Plan</span>
-                </p>
-                <p className="mt-1 text-[10px] font-semibold tracking-[2px] text-[#32CD32]">
-                  NAIROBI, KENYA
-                </p>
-              </div>
+            <Image
+                src="/Pika_White.svg"
+                alt="PikaPlan Logo"
+                width={0}
+                height={0}
+                style={{ width: 'auto', height: '95px' }}
+                className="object-contain"
+                priority
+            />
             </div>
             <p className="mb-6 text-base font-medium leading-relaxed text-white/85">
               Smart Meals. Smart Living. Plan your meals, discover local vendors, and eat smarter every day.

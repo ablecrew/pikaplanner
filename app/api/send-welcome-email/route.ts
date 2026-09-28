@@ -99,7 +99,7 @@ function WelcomeEmail({ fullName, isFirstLogin }: { fullName: string; isFirstLog
           <!-- CTA Button -->
           <tr>
             <td style="padding:0 32px 40px;text-align:center;">
-              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/dashboard"
+              <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard"
                  style="display:inline-block;background:linear-gradient(135deg,#1A5C3A 0%,#126e3d 100%);color:#ffffff;padding:16px 40px;border-radius:14px;text-decoration:none;font-size:15px;font-weight:700;box-shadow:0 4px 16px rgba(26,92,58,0.3);">
                 ${isFirstLogin ? 'Start Exploring →' : 'Go to Dashboard →'}
               </a>
@@ -111,7 +111,7 @@ function WelcomeEmail({ fullName, isFirstLogin }: { fullName: string; isFirstLog
           <tr>
             <td style="padding:0 32px 40px;text-align:center;">
               <p style="margin:0;font-size:13px;color:#9ca3af;">
-                Or <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/discover" style="color:#F4A535;text-decoration:none;font-weight:600;">browse available meals</a> right now
+                Or <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/discover" style="color:#F4A535;text-decoration:none;font-weight:600;">browse available meals</a> right now
               </p>
             </td>
           </tr>
@@ -137,7 +137,7 @@ function WelcomeEmail({ fullName, isFirstLogin }: { fullName: string; isFirstLog
                     <p style="margin:6px 0 0;font-size:11px;color:#92400e;">
                       Unlimited meal plans · Vendor discounts · Priority support
                     </p>
-                    <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/pricing"
+                    <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/pricing"
                        style="display:inline-block;margin-top:12px;background:#F4A535;color:#ffffff;padding:10px 28px;border-radius:10px;text-decoration:none;font-size:13px;font-weight:700;">
                       See Plans
                     </a>
@@ -153,9 +153,9 @@ function WelcomeEmail({ fullName, isFirstLogin }: { fullName: string; isFirstLog
             <td style="padding:24px 32px 32px;text-align:center;">
               <p style="margin:0;font-size:11px;color:#d1d5db;line-height:1.6;">
                 © ${new Date().getFullYear()} PikaPlan. All rights reserved.<br>
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/privacy" style="color:#9ca3af;text-decoration:underline;">Privacy</a> · 
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/terms" style="color:#9ca3af;text-decoration:underline;">Terms</a> · 
-                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001'}/contact" style="color:#9ca3af;text-decoration:underline;">Contact</a>
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/privacy" style="color:#9ca3af;text-decoration:underline;">Privacy</a> · 
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/terms" style="color:#9ca3af;text-decoration:underline;">Terms</a> · 
+                <a href="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/contact" style="color:#9ca3af;text-decoration:underline;">Contact</a>
               </p>
             </td>
           </tr>
